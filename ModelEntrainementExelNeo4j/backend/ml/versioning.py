@@ -1,7 +1,7 @@
 """
-versioning.py — Gestionnaire de versions de modèles
+versioning.py  Gestionnaire de versions de modles
 ====================================================
-Persiste les métadonnées des versions dans models/versions/version_config.json
+Persiste les mtadonnes des versions dans models/versions/version_config.json
 et version_history.json. Compatible avec le format existant.
 """
 
@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 
 
 class ModelVersionManager:
-    """Gère les métadonnées des versions de modèles ML."""
+    """Gre les mtadonnes des versions de modles ML."""
 
     def __init__(self, versions_dir: str = "models/versions"):
         self.versions_dir = versions_dir
@@ -21,10 +21,10 @@ class ModelVersionManager:
         self.history_file = os.path.join(self.versions_dir, "version_history.json")
         self._ensure_files()
 
-    # ── Initialisation ──────────────────────────────────────────────────────
+    #  Initialisation 
 
     def _ensure_files(self):
-        """Crée les fichiers de métadonnées s'ils n'existent pas."""
+        """Cre les fichiers de mtadonnes s'ils n'existent pas."""
         if not os.path.exists(self.config_file):
             with open(self.config_file, 'w') as f:
                 json.dump({"active_version": None, "updated_at": None}, f, indent=2)
@@ -48,15 +48,15 @@ class ModelVersionManager:
         with open(self.history_file, 'w') as f:
             json.dump(history, f, indent=2)
 
-    # ── Accesseurs ──────────────────────────────────────────────────────────
+    #  Accesseurs 
 
     def get_active_version(self) -> Optional[int]:
-        """Retourne le numéro de version actif, ou None."""
+        """Retourne le numro de version actif, ou None."""
         config = self._load_config()
         return config.get("active_version")
 
     def get_next_version_number(self) -> int:
-        """Retourne le prochain numéro de version disponible."""
+        """Retourne le prochain numro de version disponible."""
         history = self._load_history()
         versions = history.get("versions", {})
         if not versions:
@@ -64,7 +64,7 @@ class ModelVersionManager:
         return max(int(k) for k in versions.keys()) + 1
 
     def list_versions(self) -> List[Dict]:
-        """Retourne la liste ordonnée des versions (du plus récent au plus ancien)."""
+        """Retourne la liste ordonne des versions (du plus rcent au plus ancien)."""
         history = self._load_history()
         versions = history.get("versions", {})
         result = []
@@ -94,7 +94,7 @@ class ModelVersionManager:
         return result
 
     def get_version_info(self, version_num: int) -> Optional[Dict]:
-        """Retourne les infos d'une version spécifique."""
+        """Retourne les infos d'une version spcifique."""
         history = self._load_history()
         key = str(version_num)
         if key not in history.get("versions", {}):
@@ -116,10 +116,18 @@ class ModelVersionManager:
         entry["is_supervised"] = bool(is_supervised)
         return entry
 
-    # ── Mutations ───────────────────────────────────────────────────────────
+    #  Mutations 
 
-    def save_version(self, version_num: int, model_path: str, metrics: dict, notes: str = ""):
-        """Enregistre une nouvelle version dans l'historique."""
+    def save_version(self, version_num: int, model_path: str, metrics: dict, notes: str = "",
+                     config_snapshot: Optional[dict] = None, report: Optional[dict] = None,
+                     analyst_comment: str = ""):
+        """Enregistre une nouvelle version dans l'historique.
+
+        Arguments additionnels stocks:
+          - config_snapshot: snapshot srialisable de la configuration utilise
+          - report: rapport de diffrences entre la version prcdente et la nouvelle
+          - analyst_comment: commentaire libre saisi par l'analyste
+        """
         history = self._load_history()
         if "versions" not in history:
             history["versions"] = {}
@@ -130,12 +138,15 @@ class ModelVersionManager:
             "model_path": model_path,
             "metrics": metrics,
             "notes": notes,
+            "config_snapshot": config_snapshot,
+            "report": report,
+            "analyst_comment": analyst_comment,
             "active": False,
         }
         self._save_history(history)
 
     def set_active_version(self, version_num: int) -> bool:
-        """Définit la version active. Retourne True si succès."""
+        """Dfinit la version active. Retourne True si succs."""
         history = self._load_history()
         versions = history.get("versions", {})
         key = str(version_num)
@@ -143,15 +154,15 @@ class ModelVersionManager:
         if key not in versions:
             return False
 
-        # Désactiver toutes les autres versions
+        # Dsactiver toutes les autres versions
         for k in versions:
             versions[k]["active"] = False
 
-        # Activer la version demandée
+        # Activer la version demande
         versions[key]["active"] = True
         self._save_history(history)
 
-        # Mettre à jour le config
+        # Mettre  jour le config
         config = self._load_config()
         config["active_version"] = version_num
         config["updated_at"] = datetime.now().isoformat()
@@ -159,7 +170,7 @@ class ModelVersionManager:
         return True
 
     def delete_version(self, version_num: int) -> bool:
-        """Supprime une version et son fichier .pkl. Retourne True si succès."""
+        """Supprime une version et son fichier .pkl. Retourne True si succs."""
         history = self._load_history()
         versions = history.get("versions", {})
         key = str(version_num)
@@ -177,16 +188,16 @@ class ModelVersionManager:
             try:
                 os.remove(model_file)
             except Exception as e:
-                print(f"⚠️ Erreur lors de la suppression du fichier {model_file}: {e}")
+                print(f" Erreur lors de la suppression du fichier {model_file}: {e}")
                 return False
 
-        # Supprimer la métadonnée de la version
+        # Supprimer la mtadonne de la version
         del versions[key]
         history["versions"] = versions
         self._save_history(history)
         return True
 
-    # ── Comparaison ────────────────────────────────────────────────────────
+    #  Comparaison 
 
     def compare_versions(self, v1: int, v2: int) -> Dict:
         """Compare deux versions et retourne les deltas et la meilleure."""
@@ -194,7 +205,7 @@ class ModelVersionManager:
         info2 = self.get_version_info(v2)
 
         if not info1 or not info2:
-            return {"error": f"Version(s) non trouvée(s): v{v1}, v{v2}"}
+            return {"error": f"Version(s) non trouve(s): v{v1}, v{v2}"}
 
         m1 = info1.get("metrics", {})
         m2 = info2.get("metrics", {})
@@ -215,8 +226,8 @@ class ModelVersionManager:
         accuracy_delta = _delta("accuracy")
         auc_delta = _delta("auc_roc")
 
-        # Déterminer la meilleure version (priorité: F1, puis AUC)
-        meilleure = v1  # défaut
+        # Dterminer la meilleure version (priorit: F1, puis AUC)
+        meilleure = v1  # dfaut
         if f1_delta is not None:
             if f1_delta > 0:
                 meilleure = v2

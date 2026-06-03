@@ -1,0 +1,78 @@
+{
+  "versions": {
+    "1": {
+      "version": 1,
+      "created_at": "2026-05-22T08:09:30.575657",
+      "model_path": "models/versions/v1_model.pkl",
+      "metrics": {
+        "is_supervised": false,
+        "score_moyen": 28.23,
+        "score_median": 28.0,
+        "score_std": 11.22,
+        "score_min": 2.0,
+        "score_max": 73.0,
+        "training_samples": 60785,
+        "models_active": [
+          "if",
+          "lof",
+          "ee"
+        ],
+        "heuristic_weight": 1.0,
+        "ml_weight": 0.0,
+        "distribution": {
+          "frauduleux": {
+            "count": 1,
+            "pct": 0.0
+          },
+          "suspect": {
+            "count": 2246,
+            "pct": 3.69
+          },
+          "normal": {
+            "count": 58538,
+            "pct": 96.3
+          }
+        }
+      },
+      "notes": "Entra\u00eenement non supervise",
+      "active": false
+    },
+    "2": {
+      "version": 2,
+      "created_at": "2026-05-22T15:10:59.374873",
+      "model_path": "models/versions/v2_model.pkl",
+      "metrics": {
+        "is_supervised": false,
+        "score_moyen": 25.81,
+        "score_median": 24.6,
+        "score_std": 10.17,
+        "score_min": 3.8,
+        "score_max": 73.2,
+        "training_samples": 60785,
+        "models_active": [
+          "if",
+          "lof",
+          "ee"
+        ],
+        "heuristic_weight": 0.6,
+        "ml_weight": 0.4,
+        "distribution": {
+          "frauduleux": {
+            "count": 7,
+            "pct": 0.01
+          },
+          "suspect": {
+            "count": 1166,
+            "pct": 1.92
+          },
+          "normal": {
+            "count": 59612,
+            "pct": 98.07
+          }
+        }
+      },
+      "notes": "Entra\u00eenement non supervise",
+      "active": true
+    }
+  }
+}

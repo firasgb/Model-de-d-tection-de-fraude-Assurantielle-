@@ -11,8 +11,21 @@ interface Version {
   auc_roc: number | null
   score_moyen: number
   notes: string
+  analyst_comment?: string
+  report?: VersionReport
+  config_snapshot?: any
   is_supervised?: boolean
   label_source?: string | null
+}
+
+interface VersionChange {
+  before: any
+  after: any
+}
+
+interface VersionReport {
+  changes?: Record<string, VersionChange>
+  [key: string]: any
 }
 
 interface VersionData {
@@ -39,6 +52,7 @@ const ModelVersions = ({ onStatsRefresh }: { onStatsRefresh?: () => void }) => {
   const [showBestOnly, setShowBestOnly] = useState(false)
   const [selectedV1, setSelectedV1] = useState<number | null>(null)
   const [selectedV2, setSelectedV2] = useState<number | null>(null)
+  const [openReportVersion, setOpenReportVersion] = useState<number | null>(null)
 
   const API_URL = (typeof import.meta !== 'undefined' && import.meta?.env?.VITE_API_URL) || 'http://localhost:8000'
 
@@ -201,6 +215,30 @@ const ModelVersions = ({ onStatsRefresh }: { onStatsRefresh?: () => void }) => {
   const displayedVersions = showBestOnly
     ? filteredVersions.filter((version) => bestVersion ? version.version === bestVersion.version : true)
     : filteredVersions
+
+  // Helper functions for formatting report data
+  const formatReportKey = (key: string): string => {
+    return key
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+  }
+
+  const formatReportValue = (value: any): string => {
+    if (value === null) return 'Null'
+    if (value === undefined) return 'Indéfini'
+    if (typeof value === 'boolean') return value ? 'Oui' : 'Non'
+    if (typeof value === 'number') return value.toString()
+    if (typeof value === 'string') return value
+    if (Array.isArray(value)) return `${value.length} élément${value.length !== 1 ? 's' : ''}`
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value)
+      } catch {
+        return '[Objet complexe]'
+      }
+    }
+    return String(value)
+  }
 
   const totalPages = Math.max(1, Math.ceil(displayedVersions.length / pageSize))
   const pageVersions = displayedVersions.slice((page - 1) * pageSize, page * pageSize)
@@ -626,11 +664,75 @@ const ModelVersions = ({ onStatsRefresh }: { onStatsRefresh?: () => void }) => {
 
                 <div className="mb-4 space-y-2">
                   <p className="text-gray-700">{version.notes}</p>
+                  {version.analyst_comment && (
+                    <div className="mt-2 p-3 bg-gray-50 border rounded text-sm text-slate-700">
+                      <strong>Commentaire analyste:</strong>
+                      <div className="mt-1 text-xs text-slate-600 whitespace-pre-wrap">{version.analyst_comment}</div>
+                    </div>
+                  )}
+                  {version.report && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() => setOpenReportVersion(openReportVersion === version.version ? null : version.version)}
+                        className="text-sm px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded hover:bg-indigo-100"
+                      >
+                        {openReportVersion === version.version ? 'Masquer le rapport' : 'Voir le rapport'}
+                      </button>
+                    </div>
+                  )}
                   <div className="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold leading-5 bg-slate-100 text-slate-800">
                     {getSupervisionMode(version)}
                   </div>
                   <p className="text-sm text-slate-600">{getSupervisionDescription(version)}</p>
                 </div>
+
+{openReportVersion === version.version && version.report && (
+  <div className="mt-4 p-4 bg-white border border-gray-100 rounded">
+    <div className="mb-4">
+      <div className="text-sm font-semibold mb-2">Rapport de changements</div>
+      <div className="text-sm text-slate-600">{version.report.summary || 'Aucun résumé disponible'}</div>
+    </div>
+    
+    {/* Display changes in a structured way */}
+    {Object.keys(version.report.changes || {}).length > 0 && (
+      <div className="space-y-3">
+        <div className="text-sm font-medium text-gray-900 mb-2">Modifications détectées :</div>
+        <div className="space-y-2">
+          {Object.entries(version.report.changes || {}).map(([key, change]) => (
+            <div key={key} className="p-3 bg-gray-50 rounded-lg">
+              <div className="flex justify-between items-start mb-1">
+                <span className="font-medium">{formatReportKey(key)}</span>
+                <span className="text-xs text-gray-500">{change.before !== null && change.after !== null ? 'Modifié' : 'Ajouté/Supprimé'}</span>
+              </div>
+              {change.before !== null && change.after !== null && (
+                <div className="flex justify-between text-xs text-gray-600">
+                  <span>Avant : {formatReportValue(change.before)}</span>
+                  <span>Après : {formatReportValue(change.after)}</span>
+                </div>
+              )}
+              {change.before === null && change.after !== null && (
+                <div className="text-xs text-gray-600">Nouveau : {formatReportValue(change.after)}</div>
+              )}
+              {change.before !== null && change.after === null && (
+                <div className="text-xs text-gray-600">Supprimé : {formatReportValue(change.before)}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+    
+    {/* Fallback when no changes detected */}
+    {Object.keys(version.report.changes || {}).length === 0 && (
+      <div className="mt-3 p-3 bg-gray-50 rounded">
+        <div className="text-xs font-semibold mb-1">Aucun changement détecté</div>
+        {version.report.summary && version.report.summary !== "" && version.report.summary.includes("Error") && (
+          <div className="text-xs text-gray-500 mt-1">{version.report.summary}</div>
+        )}
+      </div>
+    )}
+  </div>
+)}
 
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4">
                   <div className="text-center">

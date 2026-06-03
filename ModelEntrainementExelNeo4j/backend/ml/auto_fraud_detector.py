@@ -1,183 +1,4 @@
 """
-Minimal AutoFraudDetector fallback implementation.
-
-This stub provides a lightweight, deterministic scoring mechanism so the API
-can run even if the full implementation is not present. It is intentionally
-simple: scores are generated deterministically from the row index using MD5
-so behaviour is reproducible across runs.
-
-The real project should replace this file with the full `AutoFraudDetector`.
-"""
-import os
-import pickle
-from hashlib import md5
-from typing import Any, Dict, List, Optional
-
-import numpy as np
-import pandas as pd
-
-
-class SimpleVersionManager:
-    def __init__(self, models_dir: str = None):
-        self.models_dir = models_dir or os.path.join(os.path.dirname(__file__), '..', 'models', 'versions')
-        self.active = None
-
-    def get_active_version(self):
-        return self.active
-
-    def get_next_version_number(self) -> int:
-        try:
-            files = os.listdir(self.models_dir)
-        except Exception:
-            return 1
-        nums = []
-        for f in files:
-            if f.startswith('v') and f.endswith('_model.pkl'):
-                try:
-                    n = int(f[1:].split('_')[0])
-                    nums.append(n)
-                except Exception:
-                    continue
-        return max(nums) + 1 if nums else 1
-
-    def save_version(self, *args, **kwargs):
-        return True
-
-    def set_active_version(self, v: int):
-        self.active = v
-        return True
-
-    def list_all_versions(self):
-        return []
-
-    def get_version_info(self, version_num: int):
-        return {}
-
-    def delete_version(self, version_num: int):
-        return False
-
-
-class AutoFraudDetector:
-    def __init__(self):
-        self.is_fitted = False
-        self._cached_scores: Optional[np.ndarray] = None
-        self._cached_compact: Optional[List[Dict[str, Any]]] = None
-        self._data_cache: Dict[str, Any] = {}
-        self.version_manager = SimpleVersionManager()
-        # simple default config
-        self.config = type('C', (), {})()
-        self.config.thresholds = {"normal_max": 49.99, "suspect_min": 50.0, "frauduleux": 70.0}
-        self.config.group_weights = {"financial": 35, "temporal": 35, "frequency": 30, "network": 22}
-
-    def _make_scores_from_index(self, df: pd.DataFrame) -> np.ndarray:
-        # deterministic pseudo-random score per row using md5 of the index/key
-        scores = []
-        for idx in df.index:
-            s = str(idx).encode('utf-8')
-            h = md5(s).hexdigest()[:8]
-            val = int(h, 16) % 101
-            scores.append(float(val))
-        return np.array(scores, dtype=float)
-
-    def fit(self, sinistres_df: pd.DataFrame, contrats_df=None, tiers_df=None, geocoder=None, label_column: Optional[str] = None, label_source: Optional[str] = None, sample_fraction: float = 1.0, progress_callback=None):
-        # Generate deterministic scores and compact structures
-        if sinistres_df is None:
-            raise ValueError('sinistres_df is required')
-        df = sinistres_df.copy()
-        n = len(df)
-        self._cached_scores = self._make_scores_from_index(df)
-        self._cached_compact = []
-        for sc in self._cached_scores:
-            statut = 'frauduleux' if sc >= 70 else ('suspect' if sc >= 50 else 'normal')
-            niveau = 'critique' if sc >= 85 else ('élevé' if sc >= 70 else 'modéré')
-            self._cached_compact.append({'total': float(sc), 'statut': statut, 'niveau': niveau})
-        self._data_cache = {'scores': list(self._cached_scores)}
-        self.is_fitted = True
-
-    def save(self, path: str):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'wb') as f:
-            pickle.dump({'_cached_scores': self._cached_scores, '_cached_compact': self._cached_compact}, f)
-
-    def load(self, path: str) -> bool:
-        try:
-            with open(path, 'rb') as f:
-                obj = pickle.load(f)
-            self._cached_scores = obj.get('_cached_scores')
-            self._cached_compact = obj.get('_cached_compact')
-            self.is_fitted = self._cached_scores is not None
-            return True
-        except Exception:
-            return False
-
-    def get_current_version_metrics(self) -> Dict[str, Any]:
-        return {"score_mean": float(np.mean(self._cached_scores)) if self._cached_scores is not None else None}
-
-    def get_current_config(self) -> Dict[str, Any]:
-        return {"thresholds": self.config.thresholds, "group_weights": self.config.group_weights}
-
-    def update_config(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        # naive update
-        if 'thresholds' in payload:
-            self.config.thresholds.update(payload['thresholds'])
-        if 'group_weights' in payload:
-            self.config.group_weights.update(payload['group_weights'])
-        return {"success": True, "config_snapshot": self.get_current_config()}
-
-    def get_cached_compact(self, idx: int) -> Dict[str, Any]:
-        if self._cached_compact is None:
-            return {}
-        if idx < 0 or idx >= len(self._cached_compact):
-            return {}
-        return self._cached_compact[idx]
-
-    def _status_from_score(self, score: float):
-        if score >= 70:
-            return 'frauduleux', 'élevé'
-        if score >= 50:
-            return 'suspect', 'modéré'
-        return 'normal', 'faible'
-
-    def predict(self, sinistre_id: Any, sinistres_df: pd.DataFrame, contrats_df=None, tiers_df=None):
-        # Return a minimal prediction dict
-        if self._cached_scores is None:
-            raise RuntimeError('Detector not fitted')
-        try:
-            idx = list(sinistres_df.index).index(sinistre_id)
-        except Exception:
-            idx = 0
-        score = float(self._cached_scores[idx])
-        statut, niveau = self._status_from_score(score)
-        return {"score": score, "statut": statut, "niveau": niveau}
-
-    def get_global_statistics(self):
-        if self._cached_scores is None:
-            return {"count": 0}
-        arr = np.array(self._cached_scores)
-        return {
-            "count": int(arr.size),
-            "score_mean": float(arr.mean()),
-            "distribution": {
-                "frauduleux": int((arr >= 70).sum()),
-                "suspect": int(((arr >= 50) & (arr < 70)).sum()),
-                "normal": int((arr < 50).sum()),
-            }
-        }
-
-    # Placeholder implementations for methods expected elsewhere
-    def list_all_versions(self):
-        return []
-
-    def set_active_version(self, v: int):
-        self.version_manager.set_active_version(v)
-        return True
-
-    def validate_scoring(self):
-        return {"success": True}
-
-    def calculate_grouped_score(self, i: int):
-        return {}
-"""
 auto_fraud_detector.py --- VERSION 3.14.1
 =======================================
 Corrections v3.14.1 :
@@ -186,7 +7,6 @@ Corrections v3.14.1 :
   3. validate_scoring() protegee contre cache absent
 Version precedente : 3.14
 """
-
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Any, Optional, Tuple, Callable
@@ -211,67 +31,67 @@ from .scoring_config import ScoringConfigManager, ScoringConfig
 from .versioning import ModelVersionManager
 
 FEATURE_NAME_MAPPING = {
-    "num_TOTALREGLEMENT":                  "💰 Montant du sinistre",
-    "std_TOTALREGLEMENT":                  "📊 Écart-type du montant",
-    "ratio_montant_moyen":                 "📈 Ratio montant / moyenne",
-    "ratio_montant_median":                "📈 Ratio montant / mediane",
-    "ratio_montant_prime":                 "💰 Ratio montant / prime contrat",
-    "montant_10x_prime":                   "🚨 Montant > 10x la prime",
-    "zscore_montant":                      "📊 Écart normalise du montant",
-    "montant_3std_suspect":                "⚠️ Montant anormal (>3σ)",
-    "ratio_montant_vs_garage":             "🔧 Montant vs garage",
-    "ratio_montant_vs_expert":             "🔍 Montant vs expert",
-    "ratio_montant_vs_client":             "👤 Montant vs client moyen",
-    "expert_cout_anormal":                 "💰 Cout expert anormal",
-    "incoherence_age_montant":             "🚗 Vehicule age + montant eleve",
-    "ratio_montant_pv_global":             "🏪 Montant vs point de vente",
-    "ratio_montant_vs_combo_job_marque":   "🔄 Montant anormal combo job/marque",
-    "decalage_survenance_declaration_jours": "⏰ Delai de declaration",
-    "sinistre_moins_7j_apres_effet":       "⚠️ Sinistre <7j apres effet",
-    "declaration_tardive_15j":             "⏰ Declaration >15 jours",
-    "sinistre_moins_7j_expiration":        "⚠️ Sinistre <7j avant expiration",
-    "declaration_apres_weekend":           "📅 Declaration post-weekend",
-    "sinistre_heure_nuit":                 "🌙 Sinistre entre 0h et 5h",
-    "sinistre_weekend":                    "📅 Sinistre samedi/dimanche",
-    "survenance_mois":                     "📅 Mois de survenance",
-    "is_weekend_DATE_SURVENANCE":          "📅 Sinistre weekend",
-    "nbr_sinistres_vehicule":              "🚗 Sinistres par vehicule",
-    "nbr_sinistres_contrat":               "📄 Sinistres par contrat",
-    "nbr_sinistres_client":                "👤 Sinistres par assure",
-    "nbr_sinistres_expert":                "🔍 Sinistres par expert",
-    "nbr_sinistres_garage":                "🔧 Sinistres par garage",
-    "nbr_sinistres_adverse":               "🚗 Sinistres par tiers adverse",
-    "sinistres_client_12mois":             "📊 Sinistres/12 mois",
-    "client_plus3_sinistres_12m":          "⚠️ >3 sinistres/an",
-    "client_plus7_sinistres_12m":          "🚨 +7 sinistres/an",
-    "delai_moyen_sinistres":               "⏱️ Delai moyen sinistres",
-    "cluster_temporel_vehicule":           "🕐 Sinistres rapproches vehicule",
-    "cluster_temporel_client":             "🕐 Sinistres rapproches client",
-    "velocite_recente_vehicule":           "⚡ Acceleration sinistres vehicule",
-    "velocite_recente_client":             "⚡ Acceleration sinistres client",
-    "nb_avenants_contrat":                 "📄 Nombre d'avenants",
-    "contrat_avenants_frequents":          "📄 Avenants frequents (>2)",
-    "avenant_proche_sinistre_30j":         "⚠️ Avenant <30j avant sinistre",
-    "freq_IMMATRICULATION":                "🚗 Frequence par immatriculation",
-    "freq_EXPERT_STAREX":                  "🔍 Frequence par expert",
-    "freq_GARAGES":                        "🔧 Frequence par garage",
-    "freq_expert_meme_vehicule":           "🔄 Expert-vehicule recurrent",
-    "expert_vehicule_repete":              "🔄 Expert + vehicule repetes",
-    "adverse_repete":                      "🚗 Tiers adverse recurrent",
-    "freq_temoin":                         "👥 Frequence temoin",
-    "temoin_frequent":                     "👥 Temoin frequent (>3x)",
-    "lieu_sinistre_frequent":              "📍 Lieu sinistre recurrent",
-    "garage_taux_remplacement_eleve":      "🔧 Taux remplacement >80%",
-    "freq_combo_job_marque":               "🔄 Combo job-marque suspect",
-    "note_conducteur_faible":              "👤 Note conducteur <5/10",
-    "note_conducteur_tres_faible":         "🚨 Note conducteur <3/10",
-    "kilometrage_annuel_eleve":            "📊 Kilometrage >30k/an",
-    "distance_sinistre_residence_elevee":  "📍 Distance sinistre >30km",
-    "distance_sinistre_residence_identical": "📍 Sinistre a domicile",
-    "distance_travail_residence_elevee":   "🏢 Travail eloigne residence",
-    "profession_risque":                   "⚠️ Profession a risque",
-    "sinistre_frontiere":                  "🌍 Sinistre frontiere tunisienne",
-    "montant_cumule_vehicule":             "💰 Montant cumule vehicule",
+    "num_TOTALREGLEMENT":                  " Montant du sinistre",
+    "std_TOTALREGLEMENT":                  " cart-type du montant",
+    "ratio_montant_moyen":                 " Ratio montant / moyenne",
+    "ratio_montant_median":                " Ratio montant / mediane",
+    "ratio_montant_prime":                 " Ratio montant / prime contrat",
+    "montant_10x_prime":                   " Montant > 10x la prime",
+    "zscore_montant":                      " cart normalise du montant",
+    "montant_3std_suspect":                " Montant anormal (>3)",
+    "ratio_montant_vs_garage":             " Montant vs garage",
+    "ratio_montant_vs_expert":             " Montant vs expert",
+    "ratio_montant_vs_client":             " Montant vs client moyen",
+    "expert_cout_anormal":                 " Cout expert anormal",
+    "incoherence_age_montant":             " Vehicule age + montant eleve",
+    "ratio_montant_pv_global":             " Montant vs point de vente",
+    "ratio_montant_vs_combo_job_marque":   " Montant anormal combo job/marque",
+    "decalage_survenance_declaration_jours": " Delai de declaration",
+    "sinistre_moins_7j_apres_effet":       " Sinistre <7j apres effet",
+    "declaration_tardive_15j":             " Declaration >15 jours",
+    "sinistre_moins_7j_expiration":        " Sinistre <7j avant expiration",
+    "declaration_apres_weekend":           " Declaration post-weekend",
+    "sinistre_heure_nuit":                 " Sinistre entre 0h et 5h",
+    "sinistre_weekend":                    " Sinistre samedi/dimanche",
+    "survenance_mois":                     " Mois de survenance",
+    "is_weekend_DATE_SURVENANCE":          " Sinistre weekend",
+    "nbr_sinistres_vehicule":              " Sinistres par vehicule",
+    "nbr_sinistres_contrat":               " Sinistres par contrat",
+    "nbr_sinistres_client":                " Sinistres par assure",
+    "nbr_sinistres_expert":                " Sinistres par expert",
+    "nbr_sinistres_garage":                " Sinistres par garage",
+    "nbr_sinistres_adverse":               " Sinistres par tiers adverse",
+    "sinistres_client_12mois":             " Sinistres/12 mois",
+    "client_plus3_sinistres_12m":          " >3 sinistres/an",
+    "client_plus7_sinistres_12m":          " +7 sinistres/an",
+    "delai_moyen_sinistres":               " Delai moyen sinistres",
+    "cluster_temporel_vehicule":           " Sinistres rapproches vehicule",
+    "cluster_temporel_client":             " Sinistres rapproches client",
+    "velocite_recente_vehicule":           " Acceleration sinistres vehicule",
+    "velocite_recente_client":             " Acceleration sinistres client",
+    "nb_avenants_contrat":                 " Nombre d'avenants",
+    "contrat_avenants_frequents":          " Avenants frequents (>2)",
+    "avenant_proche_sinistre_30j":         " Avenant <30j avant sinistre",
+    "freq_IMMATRICULATION":                " Frequence par immatriculation",
+    "freq_EXPERT_STAREX":                  " Frequence par expert",
+    "freq_GARAGES":                        " Frequence par garage",
+    "freq_expert_meme_vehicule":           " Expert-vehicule recurrent",
+    "expert_vehicule_repete":              " Expert + vehicule repetes",
+    "adverse_repete":                      " Tiers adverse recurrent",
+    "freq_temoin":                         " Frequence temoin",
+    "temoin_frequent":                     " Temoin frequent (>3x)",
+    "lieu_sinistre_frequent":              " Lieu sinistre recurrent",
+    "garage_taux_remplacement_eleve":      " Taux remplacement >80%",
+    "freq_combo_job_marque":               " Combo job-marque suspect",
+    "note_conducteur_faible":              " Note conducteur <5/10",
+    "note_conducteur_tres_faible":         " Note conducteur <3/10",
+    "kilometrage_annuel_eleve":            " Kilometrage >30k/an",
+    "distance_sinistre_residence_elevee":  " Distance sinistre >30km",
+    "distance_sinistre_residence_identical": " Sinistre a domicile",
+    "distance_travail_residence_elevee":   " Travail eloigne residence",
+    "profession_risque":                   " Profession a risque",
+    "sinistre_frontiere":                  " Sinistre frontiere tunisienne",
+    "montant_cumule_vehicule":             " Montant cumule vehicule",
 }
 
 
@@ -282,13 +102,13 @@ class AutoFraudDetector:
     Poids recalibres pour donnees tunisiennes (score moyen cible 35-45).
     """
 
-    def __init__(self):
+    def __init__(self, community_detector=None):
         self.feature_engineer = None
         self.models: Dict[str, Any] = {}
         self.is_fitted = False
         self.feature_importance: Dict[str, float] = {}
 
-        # ── CONFIGURATION DYNAMIQUE ─────────────────────────────────────────────
+        #  CONFIGURATION DYNAMIQUE 
         from .scoring_config import ScoringConfigManager, ScoringConfig
         self.config_manager = ScoringConfigManager()
         self.config = self.config_manager.current  # ScoringConfig
@@ -314,6 +134,8 @@ class AutoFraudDetector:
             "DRV_DIST_SIN": 2, "DRV_DIST_TRV": 1,
             # Profile
             "PRF_JOB": 2,
+            # Community (nouveau)
+            "COM_SCORE": 15,  # Poids par dfaut pour le score de communaut
         }
 
         # Retrocompatibilite: expose les seuils comme attributs
@@ -321,8 +143,8 @@ class AutoFraudDetector:
         self.seuil_suspect_min  = self.config.thresholds["suspect_min"]
         self.seuil_frauduleux   = self.config.thresholds["frauduleux"]
 
-        self.heuristic_weight = 1.0
-        self.ml_weight        = 0.0
+        self.heuristic_weight = 0.6
+        self.ml_weight        = 0.4
 
         self._cached_scores:  Optional[np.ndarray] = None
         self._cached_compact: Optional[List[Dict]] = None
@@ -339,12 +161,15 @@ class AutoFraudDetector:
         self._active_models: List[str] = []
         self._ee_available: bool = True
 
-        # ── VERSIONING ─────────────────────────────────────────────────────
+        #  VERSIONING 
         self.version_manager = ModelVersionManager()
         self.current_version_num = self.version_manager.get_next_version_number()
         self._training_metrics: Dict = {}
 
-    # ── CONFIGURATION DYNAMIQUE ──────────────────────────────────────────────
+        # Stockage du dtecteur de communaut
+        self.community_detector = community_detector
+
+    #  CONFIGURATION DYNAMIQUE 
 
     def _get_indicator_weight(self, code: str, default: float) -> float:
         """Retourne le poids d'un indicateur (configure ou par defaut)."""
@@ -372,7 +197,7 @@ class AutoFraudDetector:
         # Charger la config actuelle depuis le manager
         self.config = self.config_manager.current
 
-        # Construire la configuration fusionnée pour validation
+        # Construire la configuration fusionne pour validation
         current_dict = asdict(self.config)
         merged_dict = current_dict.copy()
         for key, value in new_config.items():
@@ -383,7 +208,7 @@ class AutoFraudDetector:
 
         merged_config = ScoringConfig(**merged_dict)
 
-        # Valider la configuration fusionnée
+        # Valider la configuration fusionne
         validation = self.config_manager.validate(merged_config)
         if not validation["valid"]:
             return {
@@ -419,11 +244,22 @@ class AutoFraudDetector:
         self.seuil_frauduleux  = self.config.thresholds["frauduleux"]
         return self.config_manager.to_dict()
 
-    # ── Utilitaires ──────────────────────────────────────────────────────────
+    #  Utilitaires 
 
     def _get_group_cap(self, group: str) -> int:
-        """Retourne le cap maximum pour un groupe selon la config actuelle."""
-        return self.config.group_weights.get(group, 0)
+        """Retourne le cap maximum pour un groupe selon la config actuelle.
+
+        Si le poids configur est 0 (ou absent), on retombe sur les poids
+        de calibration historique pour ne pas casser le scoring heuristique.
+        """
+        cap = self.config.group_weights.get(group, 0)
+        if cap <= 0:
+            _defaults = {
+                "financial": 35, "temporal": 35, "frequency": 30,
+                "network": 22, "driver": 8, "profile": 1, "community": 15,
+            }
+            cap = _defaults.get(group, 0)
+        return cap
 
     def _robust_norm(self, arr: np.ndarray, invert: bool = False) -> np.ndarray:
         arr = np.asarray(arr, dtype=float)
@@ -449,18 +285,20 @@ class AutoFraudDetector:
         if isinstance(obj, (list, tuple)):
             return [self._to_native(i) for i in obj]
         return obj
-
-    # ── fit ──────────────────────────────────────────────────────────────────
+    #  fit 
 
     def fit(self, sinistres_df, contrats_df=None, tiers_df=None,
             feature_engineer=None, geocoder=None, labels=None,
             label_column: str = None, label_source: str = None, sample_fraction: float = 1.0,
             progress_callback: Optional[Callable[[int, str], None]] = None,
-            save_version: bool = True, **kwargs):
+            save_version: bool = True, analyst_comment: str = "", **kwargs):
         from ml.auto_feature_engineering import AutoFeatureEngineer
 
         print("=" * 60)
-        print("🚀 AUTO-FRAUD v3.14.1 : Debut de l'apprentissage")
+        print("[AUTO-FRAUD v3.14.1] Debut de l'apprentissage")
+        print(f"   [TRACE] seuil_frauduleux={self.seuil_frauduleux}  "
+              f"suspect_min={self.seuil_suspect_min}  normal_max={self.seuil_normal_max}")
+        print(f"   [TRACE] group_weights={self.config.group_weights}")
         print(f"   Seuils --> Frauduleux > {self.seuil_frauduleux} "
               f"| Suspect [{self.seuil_suspect_min}-{self.seuil_frauduleux:.0f}] "
               f"| Normal < {self.seuil_suspect_min}")
@@ -473,7 +311,7 @@ class AutoFraudDetector:
         if progress_callback is not None:
             progress_callback(5, "Preparation des donnees et extraction des features...")
 
-        print("\n📊 Étape 1 : Extraction des features...")
+        print("\n tape 1 : Extraction des features...")
         if feature_engineer is not None:
             self.feature_engineer = feature_engineer
         else:
@@ -488,8 +326,10 @@ class AutoFraudDetector:
             raw_df = raw_df.iloc[:self._true_sinistres_count].reset_index(drop=True)
 
         self._raw_feature_matrix = raw_df
+        self._contrats_cached = contrats_df
+        self._tiers_cached = tiers_df
         if progress_callback is not None:
-            progress_callback(20, "Features extraites, preparation du jeu d'entraînement...")
+            progress_callback(20, "Features extraites, preparation du jeu d'entranement...")
 
         self._supervised_labels = None
         self._label_source = label_source or "manual"
@@ -499,12 +339,12 @@ class AutoFraudDetector:
             if label_column in sinistres_df.columns:
                 self._supervised_labels = sinistres_df[label_column].values
                 if label_source == 'auto':
-                    print(f"   ✅ Labels supervises generes automatiquement dans la colonne '{label_column}'")
+                    print(f"    Labels supervises generes automatiquement dans la colonne '{label_column}'")
                 else:
-                    print(f"   ✅ Labels supervises extraits depuis la colonne manuelle '{label_column}'")
+                    print(f"    Labels supervises extraits depuis la colonne manuelle '{label_column}'")
             else:
-                print(f"   ⚠️ Colonne de labels explicite '{label_column}' non trouvee dans sinistres_df. Recherche automatique...")
-        if self._supervised_labels is None:
+                print(f"    Colonne de labels explicite '{label_column}' non trouvee dans sinistres_df. Recherche automatique...")
+        if self._supervised_labels is None and label_source != "unsupervised":
             for col in [
                 "fraud_label", "is_fraud", "target", "y", "label",
                 "statut_fraude", "frauduleux", "suspect"
@@ -512,7 +352,7 @@ class AutoFraudDetector:
                 if col in sinistres_df.columns:
                     self._supervised_labels = sinistres_df[col].values
                     self._label_source = "auto"
-                    print(f"   ℹ️ Labels supervises extraits depuis la colonne '{col}' (détection automatique)")
+                    print(f"    Labels supervises extraits depuis la colonne '{col}' (dtection automatique)")
                     break
 
         if self._supervised_labels is not None:
@@ -523,15 +363,16 @@ class AutoFraudDetector:
                 )
             y = pd.Series(self._supervised_labels)
             if y.dtype == object or y.dtype.name == "category":
+                # Support 3-class labels: 0=normal, 1=fraude, 2=suspect
                 y = y.astype(str).str.lower().map({
                     "normal": 0,
                     "non_frauduleux": 0,
                     "non frauduleux": 0,
-                    "suspect": 1,
                     "frauduleux": 1,
                     "fraud": 1,
                     "fraudulent": 1,
                     "oui": 1,
+                    "suspect": 2,
                     "non": 0,
                 }).fillna(y)
             y = pd.to_numeric(y, errors="coerce")
@@ -545,7 +386,7 @@ class AutoFraudDetector:
             X = X[:, top_idx]
             self.selected_feature_indices = top_idx.tolist()
 
-        # Échantillonnage pour accelerer l'entraînement si demande
+        # chantillonnage pour accelerer l'entranement si demande
         if sample_fraction is None:
             sample_fraction = 1.0
         if sample_fraction < 1.0 and sample_fraction > 0.0:
@@ -558,56 +399,63 @@ class AutoFraudDetector:
                 y_fit = self._supervised_labels[sample_idx]
             else:
                 y_fit = None
-            print(f"\n📊 Échantillonnage entraînement : {sample_count}/{n_samples} exemples")
+            print(f"\n chantillonnage entranement : {sample_count}/{n_samples} exemples")
         else:
             X_fit = X
             y_fit = self._supervised_labels
 
         if progress_callback is not None:
-            progress_callback(25, "Debut de l'entraînement des modeles de detection...")
+            progress_callback(25, "Debut de l'entranement des modeles de detection...")
 
-        print("\n📊 Étape 2 : Entraînement des modeles ML...")
+        #  Mode 100% SUPERVIS
+        if self._supervised_labels is not None:
+            print("\n" + "=" * 60)
+            print(" MODE 100% SUPERVIS ACTIV")
+            print("   Scoring bas UNIQUEMENT sur XGBoost (0% heuristique)")
+            print("=" * 60)
+
+        print("\n tape 2 : Entranement des modeles ML...")
         n_samples = X.shape[0]
         self._active_models = []
 
         self.models["isolation_forest"] = IsolationForest(
-            n_estimators=200, contamination=0.10,
+            n_estimators=200, contamination=0.05,
             max_samples=min(2000, n_samples), random_state=42, n_jobs=-1
         )
         self.models["isolation_forest"].fit(X_fit)
         scores_if_raw = self.models["isolation_forest"].score_samples(X)
         self._active_models.append("if")
-        print("   ✓ Isolation Forest")
+        print("    Isolation Forest")
         if progress_callback is not None:
-            progress_callback(40, "Isolation Forest entraîne")
+            progress_callback(40, "Isolation Forest entrane")
 
         try:
             self.models["lof"] = LocalOutlierFactor(
                 n_neighbors=min(20, n_samples - 1),
-                contamination=0.10, novelty=True, n_jobs=-1
+                contamination=0.05, novelty=True, n_jobs=-1
             )
             self.models["lof"].fit(X_fit)
             scores_lof_raw = -self.models["lof"].score_samples(X)
             self._active_models.append("lof")
-            print("   ✓ LOF")
+            print("    LOF")
             if progress_callback is not None:
-                progress_callback(50, "LOF entraîne")
+                progress_callback(50, "LOF entrane")
         except Exception as e:
-            print(f"   ⚠️ LOF echoue : {e}")
+            print(f"    LOF echoue : {e}")
             scores_lof_raw = np.zeros(n_samples)
 
         try:
             self.models["elliptic_envelope"] = EllipticEnvelope(
-                contamination=0.10, random_state=42
+                contamination=0.05, random_state=42
             )
             self.models["elliptic_envelope"].fit(X_fit)
             scores_ee_raw = self.models["elliptic_envelope"].score_samples(X)
             self._active_models.append("ee")
-            print("   ✓ Elliptic Envelope")
+            print("    Elliptic Envelope")
             if progress_callback is not None:
-                progress_callback(60, "Elliptic Envelope entraîne")
+                progress_callback(60, "Elliptic Envelope entrane")
         except Exception as e:
-            print(f"   ⚠️ EE echoue : {e}")
+            print(f"    EE echoue : {e}")
             scores_ee_raw = np.zeros(n_samples)
             self._ee_available = False
 
@@ -621,24 +469,36 @@ class AutoFraudDetector:
 
         if self._supervised_labels is not None:
             if progress_callback is not None:
-                progress_callback(65, "Entraînement supervise XGBoost en cours...")
+                progress_callback(65, "Entranement supervise XGBoost en cours...")
             try:
                 from xgboost import XGBClassifier
             except ImportError as e:
                 raise ImportError(
-                    "XGBoost requis pour l'entraînement supervise. "
+                    "XGBoost requis pour l'entranement supervise. "
                     "Installez la bibliotheque xgboost."
                 ) from e
 
             y_unique = np.unique(y_fit)
             self._is_multiclass = len(y_unique) > 2
             self._label_encoder = None
+
             if self._is_multiclass:
-                self._label_encoder = LabelEncoder()
-                y_fit = self._label_encoder.fit_transform(y_fit)
+                if set(y_unique.tolist()) == {0, 1, 2}:
+                    self._label_encoder = None
+                    print("   Labels multiclasse {0,1,2} detects  pas de r-encodage")
+                else:
+                    from sklearn.preprocessing import LabelEncoder
+                    self._label_encoder = LabelEncoder()
+                    y_fit = self._label_encoder.fit_transform(y_fit)
+                    print(f"   Classes apres encodage : {self._label_encoder.classes_}")
+
                 objective = "multi:softprob"
-                num_class = len(self._label_encoder.classes_)
+                num_class = 3
             else:
+                if not np.array_equal(y_unique, [0, 1]):
+                    from sklearn.preprocessing import LabelEncoder
+                    self._label_encoder = LabelEncoder()
+                    y_fit = self._label_encoder.fit_transform(y_fit)
                 objective = "binary:logistic"
                 num_class = None
 
@@ -659,37 +519,56 @@ class AutoFraudDetector:
 
             if self._is_multiclass:
                 probs = self.models["xgb"].predict_proba(X)
-                # Score = prob(fraud) *100 + prob(suspect)*50 ; assumes classes are ordered by severity
+
                 if probs.shape[1] == 3:
-                    self._data_cache["scores_xgb"] = np.clip(
-                        probs[:, 2] * 100.0 + probs[:, 1] * 50.0,
-                        0.0, 100.0,
+                    dominant = np.argmax(probs, axis=1)
+                    score = np.where(
+                        dominant == 1,
+                        70.0 + probs[:, 1] * 30.0,
+                        np.where(
+                            dominant == 2,
+                            50.0 + probs[:, 2] * 20.0,
+                            probs[:, 0] * 49.0
+                        )
                     )
+                    self._data_cache["scores_xgb"] = np.clip(score, 0.0, 100.0)
+
+                    print(f"   XGBoost classes order : {self.models['xgb'].classes_}")
+                    print(f"   Dominant class counts : "
+                          f"normal={int((dominant==0).sum())}, "
+                          f"fraude={int((dominant==1).sum())}, "
+                          f"suspect={int((dominant==2).sum())}")
+                    print(f"   Score moyen XGB : {score.mean():.1f}")
+
                 else:
-                    weights = np.arange(probs.shape[1], 0, -1)
-                    weights = weights / np.sum(weights)
+                    weights = np.arange(probs.shape[1], 0, -1) / np.arange(probs.shape[1], 0, -1).sum()
                     self._data_cache["scores_xgb"] = np.clip(
-                        (probs * weights).sum(axis=1) * 100.0,
-                        0.0, 100.0,
+                        (probs * weights).sum(axis=1) * 100.0, 0.0, 100.0
                     )
+
                 self._data_cache["scores_xgb_probs"] = probs
             else:
                 self._data_cache["scores_xgb"] = self.models["xgb"].predict_proba(X)[:, 1] * 100.0
-            self._active_models.append("xgb")
-            print("   ✓ XGBoost supervise")
-            if progress_callback is not None:
-                progress_callback(75, "XGBoost supervise entraîne")
 
-        print("\n📊 Étape 3 : Pre-calcul des scores (cache)...")
+            self._active_models.append("xgb")
+            print("   XGBoost supervise")
+            if progress_callback is not None:
+                progress_callback(75, "XGBoost supervise entrane")
+        else:
+            print("   Mode non supervise (Isolation Forest, LOF, Elliptic Envelope)")
+            if progress_callback is not None:
+                progress_callback(75, "Modeles non superviss entrans")
+
+        print("\ntape 3 : Pre-calcul des scores (cache)...")
         if progress_callback is not None:
             progress_callback(80, "Pre-calcul des scores...")
         self._precompute_all_scores()
 
-        # ── CORRECTIF v3.14.1 : is_fitted positionne ICI ─────────────────
+        #  CORRECTIF v3.14.1 : is_fitted positionne ICI 
         self.is_fitted = True
 
-        # ── Importance des features (restauree) ──────────────────────────
-        print("\n📊 Étape 4 : Importance des features...")
+        #  Importance des features (restauree) 
+        print("\ntape 4 : Importance des features...")
         if progress_callback is not None:
             progress_callback(90, "Calcul de l'importance des features...")
         active = self._data_cache.get("active_models", self._active_models)
@@ -709,30 +588,30 @@ class AutoFraudDetector:
             self._data_cache["X"], combined
         )
 
-        # ── Validation post-fit ───────────────────────────────────────────
+        #  Validation post-fit 
         arr = self._cached_scores
         pct_fraud   = (arr > self.seuil_frauduleux).mean() * 100
         pct_suspect = ((arr >= self.seuil_suspect_min) & (arr <= self.seuil_frauduleux)).mean() * 100
         pct_normal  = (arr < self.seuil_normal_max).mean() * 100
-        print(f"\n📊 VALIDATION SCORING v3.14.1 :")
+        print(f"\n VALIDATION SCORING v3.14.1 :")
         print(f"   Score moyen    : {arr.mean():.1f}/100  (cible : 35-45)")
         print(f"   Frauduleux >{self.seuil_frauduleux:.0f} : {pct_fraud:.1f}%  (cible : 5-15%)")
         print(f"   Suspects        : {pct_suspect:.1f}%  (cible : 15-25%)")
         print(f"   Normaux         : {pct_normal:.1f}%")
 
         if arr.mean() < 25:
-            print("\n   ⚠️  Score moyen encore tres bas --> verifier que les colonnes")
+            print("\n     Score moyen encore tres bas --> verifier que les colonnes")
             print("        DATE_EFFET_CONTRAT, contrat_PRIME, contrat_CODE_CLIENT")
             print("        sont bien presentes dans vos donnees apres merge.")
 
         if progress_callback is not None:
             progress_callback(95, "Calcul final et validation...")
-        print("\n✅ AUTO-FRAUD v3.14.1 : Apprentissage termine !")
+        print("\n AUTO-FRAUD v3.14.1 : Apprentissage termine !")
         print("=" * 60)
         
-        # ── CALCUL DES KPIs ET SAUVEGARDE DE VERSION ───────────────────────
+        #  CALCUL DES KPIs ET SAUVEGARDE DE VERSION 
         if save_version:
-            self._compute_and_save_version_metrics()
+            self._compute_and_save_version_metrics(analyst_comment=analyst_comment)
         else:
             self._training_metrics = {
                 "is_supervised": False,
@@ -742,7 +621,7 @@ class AutoFraudDetector:
                 "score_std": round(float(self._cached_scores.std()), 2) if self._cached_scores is not None else None,
             }
         if progress_callback is not None:
-            progress_callback(100, "Entraînement termine")
+            progress_callback(100, "Entranement termine")
         
         return self
 
@@ -763,9 +642,9 @@ class AutoFraudDetector:
 
             if "scores_xgb" in self._data_cache:
                 ml_score = float(self._data_cache["scores_xgb"][i])
-                final_score = round(min(100.0, gs["score_brut"] * 0.6 + ml_score * 0.4), 1)
+                #  100% SUPERVISED: utiliser uniquement le score XGBoost
+                final_score = round(ml_score, 1)
             else:
-                final_score = round(min(100.0, gs["score_brut"]), 1)
                 if len(self._active_models) == 3:
                     ml_score = round((if_score + lof_score + ee_score) / 3.0, 1)
                 elif len(self._active_models) == 2:
@@ -775,6 +654,13 @@ class AutoFraudDetector:
                         ml_score = round((if_score + ee_score) / 2.0, 1)
                 else:
                     ml_score = round(if_score, 1)
+
+                if self.ml_weight > 0.0:
+                    final_score = round(min(100.0,
+                        gs["score_brut"] * self.heuristic_weight + ml_score * self.ml_weight
+                    ), 1)
+                else:
+                    final_score = round(min(100.0, gs["score_brut"]), 1)
 
             statut, niveau = self._status_from_score(final_score)
             scores[i] = final_score
@@ -794,13 +680,13 @@ class AutoFraudDetector:
             })
         self._cached_scores  = scores
         self._cached_compact = compact
-        print(f"   ✅ Cache pret ({n} scores)")
+        print(f"    Cache pret ({n} scores)")
 
-    # ── Calcul des KPIs et versioning ────────────────────────────────────────
+    #  Calcul des KPIs et versioning 
 
-    def _compute_and_save_version_metrics(self):
+    def _compute_and_save_version_metrics(self, analyst_comment: str = ""):
         """Calcule les KPIs (F1, Precision, Recall, AUC) et sauvegarde la version."""
-        print("\n📊 Calcul des KPIs de validation...")
+        print("\n Calcul des KPIs de validation...")
         
         metrics = {}
         
@@ -814,12 +700,15 @@ class AutoFraudDetector:
                 y_pred = None
                 y_prob = None
                 if "xgb" in self.models:
-                    if self._is_multiclass and hasattr(self.models["xgb"], "classes_"):
-                        y_pred = self.models["xgb"].predict(self._data_cache["X"])
-                        if self._label_encoder is not None and hasattr(self._label_encoder, "inverse_transform"):
-                            y_pred = self._label_encoder.transform(self._label_encoder.inverse_transform(y_pred))
+                    if self._is_multiclass:
+                        # Reconstruire les predictions depuis les probs en cache
                         if "scores_xgb_probs" in self._data_cache:
-                            y_prob = self._data_cache["scores_xgb_probs"]
+                            probs_cached = self._data_cache["scores_xgb_probs"]
+                            y_pred = np.argmax(probs_cached, axis=1)
+                            y_prob = probs_cached
+                        else:
+                            y_pred = (self._cached_scores > self.seuil_frauduleux).astype(int)
+                            y_prob = None
                     else:
                         y_pred = (self._cached_scores > self.seuil_frauduleux).astype(int)
                         y_prob = np.clip(self._cached_scores / 100.0, 0, 1)
@@ -855,7 +744,7 @@ class AutoFraudDetector:
                     }
                 metrics["is_supervised"] = True
             except Exception as e:
-                print(f"   ⚠️ Erreur calcul metriques supervisees : {e}")
+                print(f"    Erreur calcul metriques supervisees : {e}")
                 metrics["is_supervised"] = False
         else:
             metrics["is_supervised"] = False
@@ -891,27 +780,82 @@ class AutoFraudDetector:
         # Sauvegarder la version
         version_path = f"models/versions/v{self.current_version_num}_model.pkl"
         self.save(version_path)
-        
+
+        # Construire un rapport de diffrences vs version active prcdente
+        prev_ver = self.version_manager.get_active_version()
+        prev_config = None
+        prev_info = None
+        if prev_ver is not None:
+            prev_info = self.version_manager.get_version_info(prev_ver)
+            prev_config = prev_info.get("config_snapshot") if prev_info is not None else None
+
+        # Snapshot de config actuelle
+        try:
+            current_config = self.config_manager.to_dict()
+        except Exception:
+            try:
+                from dataclasses import asdict
+                current_config = asdict(self.config)
+            except Exception:
+                current_config = None
+
+        report = {"changes": {}, "summary": ""}
+        try:
+            # comparer thresholds, group_weights, indicator_weights
+            keys_to_check = ["thresholds", "group_weights", "indicator_weights"]
+            for k in keys_to_check:
+                a = (prev_config or {}).get(k) if isinstance(prev_config, dict) else None
+                b = (current_config or {}).get(k) if isinstance(current_config, dict) else None
+                if a != b:
+                    report["changes"][k] = {"before": a, "after": b}
+
+            # elements additionnels
+            report["changes"]["heuristic_weight"] = {"before": (prev_info.get("metrics", {}).get("heuristic_weight") if prev_info else None), "after": self.heuristic_weight}
+            report["changes"]["ml_weight"] = {"before": (prev_info.get("metrics", {}).get("ml_weight") if prev_info else None), "after": self.ml_weight}
+            report["changes"]["selected_feature_count"] = {"before": (len(prev_info.get("config_snapshot", {}).get("feature_names", [])) if prev_info and prev_info.get("config_snapshot") else None), "after": len(getattr(self, "selected_feature_indices", []))}
+            report["changes"]["models_active"] = {"before": (prev_info.get("metrics", {}).get("models_active") if prev_info else None), "after": self._active_models}
+
+            # XGBoost params
+            xgb_params = None
+            if "xgb" in self.models:
+                clf = self.models["xgb"]
+                try:
+                    base = getattr(clf, "base_estimator", None) or getattr(clf, "estimator", None) or clf
+                    params = {k: v for k, v in base.get_params().items() if k in ("scale_pos_weight", "n_estimators", "max_depth", "learning_rate")}
+                    xgb_params = params
+                except Exception:
+                    xgb_params = None
+            report["changes"]["xgb_params"] = {"before": (prev_info.get("report", {}).get("xgb_params") if prev_info and prev_info.get("report") else None), "after": xgb_params}
+
+            # Rsum court
+            changed = list(report["changes"].keys())
+            report["summary"] = f"Changed keys: {', '.join(changed)}"
+        except Exception as e:
+            report["summary"] = f"Error building report: {e}"
+
         # Enregistrer dans l'historique
-        notes = f"Auto-entraînement supervise" if metrics["is_supervised"] else "Entraînement non supervise"
+        notes = analyst_comment or (f"Auto-entranement supervise" if metrics["is_supervised"] else "Entranement non supervise")
         self.version_manager.save_version(
-            self.current_version_num, 
-            version_path, 
+            self.current_version_num,
+            version_path,
             metrics,
-            notes
+            notes=notes,
+            config_snapshot=current_config,
+            report=report,
+            analyst_comment=analyst_comment or "",
         )
         self.version_manager.set_active_version(self.current_version_num)
         self.current_version_num = self.version_manager.get_next_version_number()
         
-        print(f"\n✅ VERSION {self.current_version_num - 1} sauvegardee !")
-        print(f"   📊 F1-Score      : {metrics.get('f1_score', 'N/A')}")
-        print(f"   🎯 Precision     : {metrics.get('precision', 'N/A')}")
-        print(f"   🔍 Recall        : {metrics.get('recall', 'N/A')}")
-        print(f"   ✔️  Accuracy      : {metrics.get('accuracy', 'N/A')}")
-        print(f"   📈 AUC-ROC       : {metrics.get('auc_roc', 'N/A')}")
+        print(f"\n VERSION {self.current_version_num - 1} sauvegardee !")
+        print(f"    F1-Score      : {metrics.get('f1_score', 'N/A')}")
+        print(f"    Precision     : {metrics.get('precision', 'N/A')}")
+        print(f"    Recall        : {metrics.get('recall', 'N/A')}")
+        print(f"     Accuracy      : {metrics.get('accuracy', 'N/A')}")
+        print(f"    AUC-ROC       : {metrics.get('auc_roc', 'N/A')}")
         print(f"   Score moyen      : {metrics['score_moyen']}/100")
 
-    # ── Accesseurs cache ──────────────────────────────────────────────────────
+    #  Accesseurs cache 
 
     def get_cached_score(self, idx: int) -> float:
         if self._cached_scores is None:
@@ -935,14 +879,14 @@ class AutoFraudDetector:
         except Exception:
             return default
 
-    # ════════════════════════════════════════════════════════════════════
+    # 
     # CALCUL DU SCORE HEURISTIQUE --- v3.14 (inchange)
-    # ════════════════════════════════════════════════════════════════════
+    # 
 
     def calculate_grouped_score(self, sinistre_idx: int) -> Dict:
         g = self._get_raw
 
-        # ── 1) FINANCIER (max 35 pts) ─────────────────────────────────────
+        #  1) FINANCIER (max 35 pts) 
         fin, fin_t = 0.0, []
         group = "financial"
 
@@ -952,7 +896,7 @@ class AutoFraudDetector:
         if is_3std:
             fin += self._get_indicator_weight("FIN_3STD", 25)
             fin_t.append({"code": "FIN_3STD",
-                           "label": "Montant > µ+3σ (anomalie statistique extreme)",
+                           "label": "Montant > +3 (anomalie statistique extreme)",
                            "pts": 25, "group": group})
             if rmm > 5.0:
                 fin += self._get_indicator_weight("FIN_3STD_PLUS", 3)
@@ -981,7 +925,7 @@ class AutoFraudDetector:
                                "label": f"Montant = {rmm:.1f}x la moyenne",
                                "pts": 4, "group": group})
 
-        # ── NOUVEAU : ratio montant / prime contrat ───────────────────────
+        #  NOUVEAU : ratio montant / prime contrat 
         if g(sinistre_idx, "montant_10x_prime") > 0.5:
             fin += self._get_indicator_weight("FIN_10X_PRIME", 20)
             fin_t.append({"code": "FIN_10X_PRIME",
@@ -1021,7 +965,7 @@ class AutoFraudDetector:
 
         fin = min(fin, self._get_group_cap("financial"))
 
-        # ── 2) TEMPOREL (max 35 pts) ──────────────────────────────────────
+        #  2) TEMPOREL (max 35 pts) 
         temp, temp_t = 0.0, []
         group = "temporal"
 
@@ -1042,14 +986,14 @@ class AutoFraudDetector:
                             "label": "Sinistre < 7 j avant expiration",
                             "pts": 18, "group": group})
 
-        # ── NOUVEAU : heure de nuit ───────────────────────────────────────
+        #  NOUVEAU : heure de nuit 
         if g(sinistre_idx, "sinistre_heure_nuit") > 0.5:
             temp += self._get_indicator_weight("TMP_NUIT", 8)
             temp_t.append({"code": "TMP_NUIT",
                             "label": "Sinistre declare entre 0h et 5h",
                             "pts": 8, "group": group})
 
-        # ── NOUVEAU : weekend ─────────────────────────────────────────────
+        #  NOUVEAU : weekend 
         if g(sinistre_idx, "sinistre_weekend") > 0.5:
             temp += self._get_indicator_weight("TMP_WEEKEND", 5)
             temp_t.append({"code": "TMP_WEEKEND",
@@ -1059,25 +1003,25 @@ class AutoFraudDetector:
         if g(sinistre_idx, "cluster_temporel_vehicule") > 0.5:
             temp += self._get_indicator_weight("TMP_CLUSTER_VEH", 7)
             temp_t.append({"code": "TMP_CLUSTER_VEH",
-                            "label": "Delai moyen ≤ 30 j entre sinistres vehicule",
+                            "label": "Delai moyen  30 j entre sinistres vehicule",
                             "pts": 7, "group": group})
 
         if g(sinistre_idx, "cluster_temporel_client") > 0.5:
             temp += self._get_indicator_weight("TMP_CLUSTER_CLI", 7)
             temp_t.append({"code": "TMP_CLUSTER_CLI",
-                            "label": "Delai moyen ≤ 30 j entre sinistres client",
+                            "label": "Delai moyen  30 j entre sinistres client",
                             "pts": 7, "group": group})
 
         temp = min(temp, self._get_group_cap("temporal"))
 
-        # ── 3) FRÉQUENCE (max 30 pts) ─────────────────────────────────────
+        #  3) FRQUENCE (max 30 pts) 
         freq, freq_t = 0.0, []
         group = "frequency"
 
         if g(sinistre_idx, "client_plus7_sinistres_12m") > 0.5:
             freq += self._get_indicator_weight("FRQ_7", 25)
             freq_t.append({"code": "FRQ_7",
-                            "label": "≥ 7 sinistres/12 mois (meme client)",
+                            "label": " 7 sinistres/12 mois (meme client)",
                             "pts": 25, "group": group})
         elif g(sinistre_idx, "client_plus3_sinistres_12m") > 0.5:
             freq += self._get_indicator_weight("FRQ_3", 16)
@@ -1108,7 +1052,7 @@ class AutoFraudDetector:
                             "label": "> 2 avenants suspects sur le contrat",
                             "pts": 7, "group": group})
 
-        # ── NOUVEAU : avenant proche du sinistre ──────────────────────────
+        #  NOUVEAU : avenant proche du sinistre 
         if g(sinistre_idx, "avenant_proche_sinistre_30j") > 0.5:
             freq += self._get_indicator_weight("FRQ_AVENANT_RECENT", 12)
             freq_t.append({"code": "FRQ_AVENANT_RECENT",
@@ -1126,7 +1070,7 @@ class AutoFraudDetector:
 
         freq = min(freq, self._get_group_cap("frequency"))
 
-        # ── 4) RÉSEAU / COLLUSION (max 22 pts) ────────────────────────────
+        #  4) RSEAU / COLLUSION (max 22 pts) 
         net, net_t = 0.0, []
         group = "network"
 
@@ -1175,7 +1119,7 @@ class AutoFraudDetector:
 
         net = min(net, self._get_group_cap("network"))
 
-        # ── 5) CONDUCTEUR / MOBILITÉ (max 8 pts) ──────────────────────────
+        #  5) CONDUCTEUR / MOBILIT (max 8 pts) 
         drv, drv_t = 0.0, []
         group = "driver"
 
@@ -1210,26 +1154,45 @@ class AutoFraudDetector:
 
         drv = min(drv, self._get_group_cap("driver"))
 
-        # ── 6) PROFIL ASSURÉ (max 4 pts) ──────────────────────────────────
+        #  6) PROFIL ASSUR (max 4 pts) 
         prof, prof_t = 0.0, []
         group = "profile"
 
         if g(sinistre_idx, "profession_risque") > 0.5:
             prof += self._get_indicator_weight("PRF_JOB", 2)
             prof_t.append({"code": "PRF_JOB",
-                            "label": "Profession a risque (taxi, transport…)",
+                            "label": "Profession a risque (taxi, transport)",
                             "pts": 2, "group": group})
 
 
         prof = min(prof, self._get_group_cap("profile"))
 
-        # ── TOTAL ─────────────────────────────────────────────────────────
-        groupes_actifs = sum(1 for s in [fin, temp, freq, net, drv, prof] if s > 0)
-        score_brut     = fin + temp + freq + net + drv + prof
+        #  7) COMMUNAUT (max 15 pts) 
+        com, com_t = 0.0, []
+        group = "community"
+
+        # Rcuprer le score de communaut depuis les features
+        community_score = g(sinistre_idx, "community_score", 0.0)
+        if community_score > 0:
+            # Normaliser le score de communaut (0-100) vers des points (0-15)
+            com_points = min(15, (community_score / 100.0) * 15)
+            com += com_points
+            com_t.append({
+                "code": "COM_SCORE",
+                "label": f"Score de communaut : {community_score:.1f}/100",
+                "pts": round(com_points, 1),
+                "group": group
+            })
+
+        com = min(com, self._get_group_cap("community"))
+
+        #  TOTAL 
+        groupes_actifs = sum(1 for s in [fin, temp, freq, net, drv, prof, com] if s > 0)
+        score_brut     = fin + temp + freq + net + drv + prof + com
         total          = round(min(score_brut, 100.0), 1)
 
         statut, niveau = self._status_from_score(total)
-        all_triggers   = fin_t + temp_t + freq_t + net_t + drv_t + prof_t
+        all_triggers   = fin_t + temp_t + freq_t + net_t + drv_t + prof_t + com_t
 
         return {
             "total":           total,
@@ -1239,17 +1202,19 @@ class AutoFraudDetector:
             "niveau":          niveau,
             "groups": {
                 "financial": {"score": round(fin, 1),  "max": self._get_group_cap("financial"),
-                              "label": "Financier",          "triggers": fin_t},
+                               "label": "Financier",          "triggers": fin_t},
                 "temporal":  {"score": round(temp, 1), "max": self._get_group_cap("temporal"),
-                              "label": "Temporel",           "triggers": temp_t},
+                               "label": "Temporel",           "triggers": temp_t},
                 "frequency": {"score": round(freq, 1), "max": self._get_group_cap("frequency"),
-                              "label": "Frequence",          "triggers": freq_t},
+                               "label": "Frequence",          "triggers": freq_t},
                 "network":   {"score": round(net, 1),  "max": self._get_group_cap("network"),
-                              "label": "Reseau / Collusion", "triggers": net_t},
+                               "label": "Reseau / Collusion", "triggers": net_t},
                 "driver":    {"score": round(drv, 1),  "max": self._get_group_cap("driver"),
-                              "label": "Conducteur / Mobilite", "triggers": drv_t},
+                               "label": "Conducteur / Mobilite", "triggers": drv_t},
                 "profile":   {"score": round(prof, 1), "max": self._get_group_cap("profile"),
-                              "label": "Profil Assure",      "triggers": prof_t},
+                               "label": "Profil Assure",      "triggers": prof_t},
+                "community": {"score": round(com, 1),  "max": self._get_group_cap("community"),
+                               "label": "Communaut",         "triggers": com_t},
             },
             "all_triggers":   all_triggers,
             "groupes_actifs": groupes_actifs,
@@ -1266,7 +1231,7 @@ class AutoFraudDetector:
 
     def predict(self, sinistre_idx, sinistres_df=None, contrats_df=None, tiers_df=None):
         if not self.is_fitted:
-            raise ValueError("Modele non entraîne !")
+            raise ValueError("Modele non entrane !")
         if sinistre_idx >= len(self._data_cache["X"]):
             raise ValueError(f"Index {sinistre_idx} hors limites !")
         c = self.get_cached_compact(sinistre_idx)
@@ -1284,6 +1249,112 @@ class AutoFraudDetector:
             "timestamp":            datetime.now().isoformat(),
         }
         return self._to_native(result)
+    def score_df(self, new_df: pd.DataFrame, contrats_df=None, tiers_df=None, geocoder=None) -> pd.DataFrame:
+        """
+        Scorer un DataFrame non tiquet en rutilisant la pipeline entrane.
+
+        - Reconstruit les features via les mthodes internes de `feature_engineer` (sans
+          refitter le scaler), aligne les colonnes sur `feature_engineer.feature_names`,
+          applique le scaler entran et prdit avec `models['xgb']`.
+        - Retourne `new_df` tendu avec `score_suspicion` (0-100) et `statut_fraude`.
+        
+        Params:
+            new_df: DataFrame sinistres  scorer
+            contrats_df: DataFrame contrats (optionnel, utilise celui du fit si None)
+            tiers_df: DataFrame tiers (optionnel, utilise celui du fit si None)
+            geocoder: Geocoder (optionnel)
+        """
+        if not self.is_fitted:
+            raise ValueError("Modele non entran  appelez d'abord fit()")
+        if self.feature_engineer is None:
+            raise ValueError("feature_engineer absent  impossible de construire les features")
+
+        fe = self.feature_engineer
+
+        df_merged = fe._merge(
+            new_df.copy().reset_index(drop=True),
+            contrats_df if contrats_df is not None else getattr(self, "_contrats_cached", None),
+            tiers_df if tiers_df is not None else getattr(self, "_tiers_cached", None)
+        )
+        df_merged = fe._inject_gps(df_merged)
+        fd: Dict[str, Any] = {}
+        fd.update(fe._numeric(df_merged))
+        fd.update(fe._categorical(df_merged))
+        fd.update(fe._temporal(df_merged))
+        fd.update(fe._group(df_merged))
+        fd.update(fe._frequency(df_merged))
+        fd.update(fe._fraud_business(df_merged))
+        fd.update(fe._new_indicators(df_merged))
+
+        feat = pd.DataFrame(fd).fillna(0).replace([np.inf, -np.inf], 0)
+        # garantir colonnes numriques
+        for col in feat.columns:
+            if feat[col].dtype == "object":
+                feat[col] = pd.to_numeric(feat[col], errors="coerce").fillna(0)
+
+        #  DEBUG : afficher stats des features 
+        print(f"    DEBUG score_df : {len(feat)} rows, {len(feat.columns)} features")
+        if len(feat) > 0:
+            print(f"       Mean features vals: {feat.mean().mean():.4f}")
+            print(f"       Non-zero cols: {sum(feat.mean() > 0.01)}")
+        # 
+
+        # Aligner l'ordre des colonnes sur celles utilises  l'entranement
+        trained_cols = getattr(fe, "feature_names", list(feat.columns))
+        missing = [c for c in trained_cols if c not in feat.columns]
+        for c in missing:
+            feat[c] = 0.0
+        feat = feat[trained_cols]
+
+        # Appliquer le scaler entran (ne PAS refitter)
+        if hasattr(fe, "scaler") and fe.scaler is not None:
+            X_new = fe.scaler.transform(feat.values)
+        else:
+            X_new = feat.values
+
+        # Respecter la slection de features garde lors de l'entranement
+        if hasattr(self, "selected_feature_indices") and self.selected_feature_indices:
+            X_new = X_new[:, self.selected_feature_indices]
+
+# Predictions via XGBoost (or CalibratedClassifierCV)
+        clf = self.models.get("xgb")
+        if clf is None:
+            raise RuntimeError("Modele XGBoost non trouve dans self.models['xgb']  le modele doit etre entretenu en mode supervise")
+
+        probs = clf.predict_proba(X_new)
+
+        # Check actual model classes to determine if multiclass
+        actual_classes = getattr(clf, "classes_", None)
+        is_trained_multiclass = actual_classes is not None and len(actual_classes) > 2
+
+        # Calcul du score identique a l'entrainement
+        if is_trained_multiclass:
+            if probs.shape[1] == 3:
+                # Ordre garanti 0=normal, 1=fraude, 2=suspect
+                dominant = np.argmax(probs, axis=1)
+                score = np.where(
+                    dominant == 1,
+                    70.0 + probs[:, 1] * 30.0,          # frauduleux : 70-100
+                    np.where(
+                        dominant == 2,
+                        50.0 + probs[:, 2] * 20.0,      # suspect    : 50-70
+                        probs[:, 0] * 49.0               # normal     :  0-49
+                    )
+                )
+                score = np.clip(score, 0.0, 100.0)
+            else:
+                weights = np.arange(probs.shape[1], 0, -1) / np.arange(probs.shape[1], 0, -1).sum()
+                score = np.clip((probs * weights).sum(axis=1) * 100.0, 0.0, 100.0)
+        else:
+            score = probs[:, 1] * 100.0
+
+        statut = np.where(score > self.seuil_frauduleux, "frauduleux",
+                 np.where(score >= self.seuil_suspect_min, "suspect", "normal"))
+ 
+        out = new_df.copy().reset_index(drop=True)
+        out["score_suspicion"] = score
+        out["statut_fraude"] = statut
+        return out
     def score_single(self, raw_features: dict) -> dict:
         """
         Score un sinistre individuel a partir d'un dict de features brutes.
@@ -1321,13 +1392,13 @@ class AutoFraudDetector:
             }
         """
         if not self.is_fitted:
-            raise ValueError("Modele non entraîne !")
+            raise ValueError("Modele non entrane !")
  
         # Injecter les features dans un acces local (pas d'index cache)
         _raw = raw_features  # alias local
  
         def _g(feature: str, default: float = 0.0) -> float:
-            """Équivalent de _get_raw() mais sur le dict local."""
+            """quivalent de _get_raw() mais sur le dict local."""
             val = _raw.get(feature, default)
             try:
                 v = float(val)
@@ -1336,7 +1407,7 @@ class AutoFraudDetector:
             except Exception:
                 return default
  
-        # ── 1) FINANCIER (max 35 pts) ─────────────────────────────────────
+        #  1) FINANCIER (max 35 pts) 
         fin, fin_t = 0.0, []
         group = "financial"
  
@@ -1346,7 +1417,7 @@ class AutoFraudDetector:
         if is_3std:
             fin += self._get_indicator_weight("FIN_3STD", 25)
             fin_t.append({"code": "FIN_3STD",
-                           "label": "Montant > µ+3σ (anomalie statistique extreme)",
+                           "label": "Montant > +3 (anomalie statistique extreme)",
                            "pts": 25, "group": group, "niveau": "critique"})
             if rmm > 5.0:
                 fin += self._get_indicator_weight("FIN_3STD_PLUS", 3)
@@ -1414,11 +1485,11 @@ class AutoFraudDetector:
 
         fin = min(fin, self._get_group_cap("financial"))
  
-        # ── 2) TEMPOREL (max 35 pts) ──────────────────────────────────────
+        #  2) TEMPOREL (max 35 pts) 
         temp, temp_t = 0.0, []
         group = "temporal"
  
-# APRÈS
+# APRS
         if _g("declaration_tardive_15j") > 0.5:
             temp += self._get_indicator_weight("TMP_15J", 18)
             temp_t.append({"code": "TMP_15J",
@@ -1451,25 +1522,25 @@ class AutoFraudDetector:
         if _g("cluster_temporel_vehicule") > 0.5:
             temp += self._get_indicator_weight("TMP_CLUSTER_VEH", 7)
             temp_t.append({"code": "TMP_CLUSTER_VEH",
-                            "label": "Delai moyen ≤ 30 j entre sinistres du vehicule",
+                            "label": "Delai moyen  30 j entre sinistres du vehicule",
                             "pts": 7, "group": group, "niveau": "eleve"})
 
         if _g("cluster_temporel_client") > 0.5:
             temp += self._get_indicator_weight("TMP_CLUSTER_CLI", 7)
             temp_t.append({"code": "TMP_CLUSTER_CLI",
-                            "label": "Delai moyen ≤ 30 j entre sinistres de l'assure",
+                            "label": "Delai moyen  30 j entre sinistres de l'assure",
                             "pts": 7, "group": group, "niveau": "eleve"})
  
         temp = min(temp, self._get_group_cap("temporal"))
  
-        # ── 3) FRÉQUENCE (max 30 pts) ─────────────────────────────────────
+        #  3) FRQUENCE (max 30 pts) 
         freq, freq_t = 0.0, []
         group = "frequency"
  
         if _g("client_plus7_sinistres_12m") > 0.5:
             freq += self._get_indicator_weight("FRQ_7", 25)
             freq_t.append({"code": "FRQ_7",
-                            "label": "≥ 7 sinistres en 12 mois (meme assure)",
+                            "label": " 7 sinistres en 12 mois (meme assure)",
                             "pts": 25, "group": group, "niveau": "critique"})
         elif _g("client_plus3_sinistres_12m") > 0.5:
             freq += self._get_indicator_weight("FRQ_3", 16)
@@ -1517,7 +1588,7 @@ class AutoFraudDetector:
 
         freq = min(freq, self._get_group_cap("frequency"))
  
-        # ── 4) RÉSEAU / COLLUSION (max 22 pts) ────────────────────────────
+        #  4) RSEAU / COLLUSION (max 22 pts) 
         net, net_t = 0.0, []
         group = "network"
 
@@ -1567,7 +1638,7 @@ class AutoFraudDetector:
 
         net = min(net, self._get_group_cap("network"))
  
-        # ── 5) CONDUCTEUR / MOBILITÉ (max 8 pts) ──────────────────────────
+        #  5) CONDUCTEUR / MOBILIT (max 8 pts) 
         drv, drv_t = 0.0, []
         group = "driver"
 
@@ -1602,7 +1673,7 @@ class AutoFraudDetector:
 
         drv = min(drv, self._get_group_cap("driver"))
  
-        # ── 6) PROFIL ASSURÉ (max 1 pt) ───────────────────────────────────
+        #  6) PROFIL ASSUR (max 1 pt) 
         prof, prof_t = 0.0, []
         group = "profile"
 
@@ -1620,7 +1691,7 @@ class AutoFraudDetector:
 
         prof = min(prof, self._get_group_cap("profile"))
  
-        # ── TOTAL ─────────────────────────────────────────────────────────
+        #  TOTAL 
         groupes_actifs = sum(1 for s in [fin, temp, freq, net, drv, prof] if s > 0)
         score_brut     = fin + temp + freq + net + drv + prof
         total          = round(min(score_brut, 100.0), 1)
@@ -1647,7 +1718,7 @@ class AutoFraudDetector:
 
     def get_global_statistics(self):
         if not self.is_fitted:
-            raise ValueError("Modele non entraîne !")
+            raise ValueError("Modele non entrane !")
         n      = self._true_sinistres_count
         scores = self._cached_scores
         fraude  = int((scores > self.seuil_frauduleux).sum())
@@ -1692,6 +1763,8 @@ class AutoFraudDetector:
             "pct_normal": stats.get("pct_normal", 0.0),
             "seuil_frauduleux": self.seuil_frauduleux,
             "seuil_suspect_min": self.seuil_suspect_min,
+            "is_supervised": self._supervised_labels is not None,
+            "label_source": "manual" if self._label_source == "manual" else ("unsupervised" if self._label_source == "unsupervised" else "auto"),
         }
 
         if self._supervised_labels is not None and self._cached_scores is not None:
@@ -1727,7 +1800,7 @@ class AutoFraudDetector:
         """Retourne les metriques de scoring sur le cache pre-calcule."""
         if not self.is_fitted:
             return {
-                "error": "Modele non entraîne",
+                "error": "Modele non entrane",
                 "score_moyen": 0.0, "score_min": 0.0, "score_max": 0.0,
                 "pct_frauduleux": 0.0, "pct_suspect": 0.0, "pct_normal": 0.0,
                 "total_analyse": 0,
@@ -1808,25 +1881,25 @@ class AutoFraudDetector:
     def get_top_features(self, n: int = 10):
         if not self.feature_importance:
             return [
-                ("💰 Montant anormalement eleve", 0.16),
-                ("⏰ Delai declaration >30 jours", 0.14),
-                ("🚗 Multi-sinistres par vehicule", 0.11),
-                ("🌍 Sinistre frontiere",           0.09),
-                ("🔍 Expert recurrent",             0.08),
-                ("🔧 Garage suspect",               0.07),
-                ("🏠 Sinistre au domicile",         0.06),
-                ("⚠️ Sinistre proche fin contrat",  0.05),
-                ("👥 Temoin frequent",              0.04),
-                ("📊 Kilometrage annuel eleve",     0.03),
+                (" Montant anormalement eleve", 0.16),
+                (" Delai declaration >30 jours", 0.14),
+                (" Multi-sinistres par vehicule", 0.11),
+                (" Sinistre frontiere",           0.09),
+                (" Expert recurrent",             0.08),
+                (" Garage suspect",               0.07),
+                (" Sinistre au domicile",         0.06),
+                (" Sinistre proche fin contrat",  0.05),
+                (" Temoin frequent",              0.04),
+                (" Kilometrage annuel eleve",     0.03),
             ][:n]
         result = []
         for name, imp in list(self.feature_importance.items())[:n]:
             readable = FEATURE_NAME_MAPPING.get(name, name)
             if readable == name:
                 if readable.startswith("num_"):    readable = readable[4:]
-                elif readable.startswith("std_"):  readable = f"📊 Écart-type {readable[4:]}"
-                elif readable.startswith("freq_"): readable = f"🔄 Frequence {readable[5:]}"
-                elif readable.startswith("cat_"):  readable = f"📋 Categorie {readable[4:]}"
+                elif readable.startswith("std_"):  readable = f" cart-type {readable[4:]}"
+                elif readable.startswith("freq_"): readable = f" Frequence {readable[5:]}"
+                elif readable.startswith("cat_"):  readable = f" Categorie {readable[4:]}"
             if len(readable) > 40:
                 readable = readable[:37] + "..."
             result.append((readable, round(imp, 4)))
@@ -1852,6 +1925,7 @@ class AutoFraudDetector:
             "version": "3.14.1",
         }
 
+
     def save(self, path: str = "models/auto_fraud_model.pkl"):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:
@@ -1871,21 +1945,27 @@ class AutoFraudDetector:
                 "_cached_scores":           self._cached_scores,
                 "_cached_compact":          self._cached_compact,
                 "_active_models":           self._active_models,
+                "_supervised_labels":       self._supervised_labels,
+                "_label_source":            self._label_source,
+                "_contrats_cached":         self._contrats_cached,
+                "_tiers_cached":            self._tiers_cached,
+                "_is_multiclass":           self._is_multiclass,
+                "_label_encoder":           self._label_encoder,
                 "saved_at":                 datetime.now().isoformat(),
                 "version":                  "3.14.1",
             }, f)
-        print(f"✅ Modele v3.14.1 sauvegarde : {path}")
+        print(f" Modele v3.14.1 sauvegarde : {path}")
 
     def load(self, path: str = "models/auto_fraud_model.pkl"):
         if not os.path.exists(path):
-            print(f"⚠️ Modele non trouve : {path}")
+            print(f" Modele non trouve : {path}")
             return False
         try:
             with open(path, "rb") as f:
                 d = pickle.load(f)
-            print(f"📖 Pickle charge depuis {path}")
+            print(f" Pickle charge depuis {path}")
         except Exception as e:
-            print(f"❌ Erreur lors du chargement pickle : {e}")
+            print(f" Erreur lors du chargement pickle : {e}")
             return False
         self.feature_engineer          = d["feature_engineer"]
         self.models                    = d["models"]
@@ -1902,36 +1982,40 @@ class AutoFraudDetector:
         self._cached_scores            = d.get("_cached_scores")
         self._cached_compact           = d.get("_cached_compact")
         self._active_models            = d.get("_active_models", [])
+        self._supervised_labels        = d.get("_supervised_labels")
+        self._label_source             = d.get("_label_source", "manual")
+        self._contrats_cached          = d.get("_contrats_cached")
+        self._tiers_cached             = d.get("_tiers_cached")
+        self._is_multiclass            = d.get("_is_multiclass", False)
+        self._label_encoder            = d.get("_label_encoder", None)
         if not self._active_models and self.is_fitted:
             self._active_models = ["if", "lof", "ee"]
 
-        # ── Recalculer le cache si necessaire ───────────────────────────────
         if self.is_fitted and (self._cached_scores is None or len(self._cached_scores) == 0):
-            print("🔄 Recalcul du cache des scores apres chargement...")
+            print(" Recalcul du cache des scores apres chargement...")
             self._recompute_cache()
 
-        print(f"✅ Modele v{d.get('version', '?')} charge : {path}")
+        print(f" Modele v{d.get('version', '?')} charge : {path}")
         return True
 
     def _recompute_cache(self):
-        """Recalcule le cache des scores apres chargement du modele."""
         if not self.is_fitted or self._raw_sinistres is None:
-            print("⚠️ Impossible de recalculer le cache : modele non entraîne")
+            print(" Impossible de recalculer le cache : modele non entrane")
             return
 
-        print(f"🔄 Recalcul du cache pour {len(self._raw_sinistres)} sinistres...")
+        print(f" Recalcul du cache pour {len(self._raw_sinistres)} sinistres...")
         scores = np.zeros(len(self._raw_sinistres))
         compact = []
 
         for i in range(len(self._raw_sinistres)):
-            gs = self.get_cached_compact(i)
+            gs = self.calculate_grouped_score(i)
             final_score = gs["total"]
             scores[i] = final_score
             compact.append(gs)
 
         self._cached_scores = scores
         self._cached_compact = compact
-        print(f"   ✅ Cache recalcule ({len(scores)} scores)")
+        print(f"    Cache recalcule ({len(scores)} scores)")
 
     def get_human_readable_indicators(self, n: int = 10) -> List[Dict]:
         if (not self.is_fitted
@@ -1961,16 +2045,16 @@ class AutoFraudDetector:
                     "description": f"Haute: {d_h:.1f} vs normale: {d_l:.1f}",
                 })
 
-        _try_add("declaration_tardive_15j", "⏰ Declaration tardive (>15 j)", base_pts=10, seuil_abs=0.5)
-        _try_add("num_TOTALREGLEMENT",                   "💰 Montant anormalement eleve",   seuil_abs=10000)
-        _try_add("ratio_montant_prime",                  "💰 Montant vs prime du contrat",   seuil_abs=3)
-        _try_add("sinistre_frontiere",                   "🌍 Sinistre a proximite frontiere", base_pts=8)
-        _try_add("nbr_sinistres_vehicule",               "🚗 Vehicules multi-sinistres",      seuil_abs=2)
-        _try_add("sinistre_heure_nuit",                  "🌙 Sinistre entre 0h et 5h",        base_pts=6)
-        _try_add("avenant_proche_sinistre_30j",          "⚠️ Avenant avant sinistre",         base_pts=8)
-        _try_add("distance_sinistre_residence_identical","🏠 Sinistre declare au domicile",   base_pts=5)
-        _try_add("freq_EXPERT_STAREX",                   "🔍 Expert recurrent",               seuil_abs=2)
-        _try_add("montant_cumule_vehicule",              "💰 Historique montants eleve",      base_pts=8)
+        _try_add("declaration_tardive_15j", "Delai declaration tardive (>15 j)", base_pts=10, seuil_abs=0.5)
+        _try_add("num_TOTALREGLEMENT",                   "Montant anormalement eleve",   seuil_abs=10000)
+        _try_add("ratio_montant_prime",                  "Montant vs prime du contrat",   seuil_abs=3)
+        _try_add("sinistre_frontiere",                   "Sinistre a proximite frontiere", base_pts=8)
+        _try_add("nbr_sinistres_vehicule",               "Vehicules multi-sinistres",      seuil_abs=2)
+        _try_add("sinistre_heure_nuit",                  "Sinistre entre 0h et 5h",        base_pts=6)
+        _try_add("avenant_proche_sinistre_30j",          "Avenant avant sinistre",         base_pts=8)
+        _try_add("distance_sinistre_residence_identical","Sinistre declare au domicile",   base_pts=5)
+        _try_add("freq_EXPERT_STAREX",                   "Expert recurrent",               seuil_abs=2)
+        _try_add("montant_cumule_vehicule",              "Historique montants eleve",      base_pts=8)
 
         total = sum(i["pourcentage_contribution"] for i in indicators)
         if total > 0:
@@ -1983,86 +2067,75 @@ class AutoFraudDetector:
 
     def _get_default_indicators(self) -> List[Dict]:
         return [
-            {"nom": "⏰ Delai declaration >30 jours",    "pourcentage_contribution": 18.0},
-            {"nom": "💰 Montant >10x la prime contrat",  "pourcentage_contribution": 16.0},
-            {"nom": "🚗 Vehicule >2 sinistres/an",       "pourcentage_contribution": 13.0},
-            {"nom": "⚠️ Avenant avant sinistre",         "pourcentage_contribution": 11.0},
-            {"nom": "🌍 Sinistre frontiere",              "pourcentage_contribution":  9.0},
-            {"nom": "🔧 Garage taux remplacement eleve",  "pourcentage_contribution":  8.0},
-            {"nom": "🏠 Sinistre au domicile",            "pourcentage_contribution":  7.0},
-            {"nom": "🌙 Sinistre la nuit (0h--5h)",        "pourcentage_contribution":  6.0},
-            {"nom": "🔍 Expert recurrent",                "pourcentage_contribution":  5.0},
-            {"nom": "📊 Kilometrage annuel eleve",        "pourcentage_contribution":  4.0},
+            {"nom": "Delai declaration >30 jours",    "pourcentage_contribution": 18.0},
+            {"nom": "Montant >10x la prime contrat",  "pourcentage_contribution": 16.0},
+            {"nom": "Vehicule >2 sinistres/an",       "pourcentage_contribution": 13.0},
+            {"nom": "Avenant avant sinistre",         "pourcentage_contribution": 11.0},
+            {"nom": "Sinistre frontiere",              "pourcentage_contribution":  9.0},
+            {"nom": "Garage taux remplacement eleve",  "pourcentage_contribution":  8.0},
+            {"nom": "Sinistre au domicile",            "pourcentage_contribution":  7.0},
+            {"nom": "Sinistre la nuit (0h--5h)",        "pourcentage_contribution":  6.0},
+            {"nom": "Expert recurrent",                "pourcentage_contribution":  5.0},
+            {"nom": "Kilometrage annuel eleve",        "pourcentage_contribution":  4.0},
         ]
 
-    # ════════════════════════════════════════════════════════════════════════
-    # GESTION DES VERSIONS --- v1.0
-    # ════════════════════════════════════════════════════════════════════════
-
     def list_all_versions(self) -> List[Dict]:
-        """Liste toutes les versions avec leurs KPIs."""
         return self.version_manager.list_versions()
 
     def get_version_metrics(self, version_num: int) -> Optional[Dict]:
-        """Retourne les KPIs d'une version."""
         info = self.version_manager.get_version_info(version_num)
         return info["metrics"] if info else None
 
     def load_version(self, version_num: int) -> bool:
-        """Charge une version specifique."""
         info = self.version_manager.get_version_info(version_num)
         if not info:
-            print(f"❌ Version {version_num} non trouvee")
+            print(f" Version {version_num} non trouvee")
             return False
-        
+
         model_path = info["model_path"]
         if self.load(model_path):
             self.current_version_num = self.version_manager.get_next_version_number()
-            print(f"✅ Version {version_num} chargee")
+            print(f" Version {version_num} chargee")
             print(f"   F1-Score : {info['metrics'].get('f1_score', 'N/A')}")
             print(f"   Accuracy : {info['metrics'].get('accuracy', 'N/A')}")
             return True
         return False
 
     def set_active_version(self, version_num: int) -> bool:
-        """Definit la version active pour les predictions."""
         if self.version_manager.set_active_version(version_num):
-            print(f"✅ Version {version_num} activee")
+            print(f" Version {version_num} activee")
             return self.load_version(version_num)
         return False
 
     def delete_version(self, version_num: int) -> bool:
-        """Supprime une version non-active. Retourne True si succès."""
         if self.version_manager.delete_version(version_num):
-            print(f"✅ Version {version_num} supprimee avec succes")
+            print(f" Version {version_num} supprimee avec succes")
             return True
         else:
-            print(f"❌ Impossible de supprimer la version {version_num} (version active ou non trouvee)")
+            print(f" Impossible de supprimer la version {version_num} (version active ou non trouvee)")
             return False
 
     def compare_versions(self, v1: int, v2: int) -> Dict:
-        """Compare deux versions et indique la meilleure."""
         comparison = self.version_manager.compare_versions(v1, v2)
         if "error" not in comparison:
             def _format_delta(value):
                 return f"{value:+.4f}" if value is not None else "N/A"
 
-            print(f"\n📊 Comparaison v{v1} vs v{v2}:")
+            print(f"\n Comparaison v{v1} vs v{v2}:")
             print(f"   F1-Score delta  : {_format_delta(comparison.get('f1_delta'))}")
             print(f"   Precision delta : {_format_delta(comparison.get('precision_delta'))}")
             print(f"   Recall delta    : {_format_delta(comparison.get('recall_delta'))}")
             print(f"   AUC delta       : {_format_delta(comparison.get('auc_delta'))}")
-            print(f"   ⭐ Meilleure version : v{comparison.get('meilleure_version')}")
+            print(f"    Meilleure version : v{comparison.get('meilleure_version')}")
         return comparison
 
     def display_version_history(self):
-        """Affiche l'historique complet des versions."""
         versions = self.list_all_versions()
         print("\n" + "="*100)
-        print("📋 HISTORIQUE DES VERSIONS")
+        print(" HISTORIQUE DES VERSIONS")
         print("="*100)
         for v in versions:
-            status = "🟢 ACTIVE" if v["active"] else "⚪"
+            status = "ACTIVE" if v["active"] else "INACTIVE"
             print(f"\nv{v['version']} {status} --- {v['created_at']}")
             print(f"   F1-Score  : {v['f1_score']}")
             print(f"   Precision : {v['precision']}")

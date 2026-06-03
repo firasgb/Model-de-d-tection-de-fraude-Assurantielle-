@@ -1,11 +1,11 @@
 # ml/neo4j_fraud_detector.py
 """
-Neo4jFraudDetector — Détecteur de fraude hybride pour les indicateurs Neo4j
+Neo4jFraudDetector  Dtecteur de fraude hybride pour les indicateurs Neo4j
 ============================================================================
-- Règles heuristiques : 12 indicateurs répartis en 4 groupes (Temporel, Comportement, Réseau, Financier)
-- Modèles non‑supervisés : Isolation Forest, LOF, Elliptic Envelope entraînés sur les 12 features
-- Score final = heuristique * 0.7 + ml_normalisé * 0.3  (poids réglables)
-- Bonus de cumul plafonné et seuil plancher (identique Excel v3.12)
+- Rgles heuristiques : 12 indicateurs rpartis en 4 groupes (Temporel, Comportement, Rseau, Financier)
+- Modles nonsuperviss : Isolation Forest, LOF, Elliptic Envelope entrans sur les 12 features
+- Score final = heuristique * 0.7 + ml_normalis * 0.3  (poids rglables)
+- Bonus de cumul plafonn et seuil plancher (identique Excel v3.12)
 """
 
 import numpy as np
@@ -18,7 +18,7 @@ from sklearn.covariance import EllipticEnvelope
 import warnings
 warnings.filterwarnings('ignore')
 
-# ─── Groupes et poids (repris de Neo4jFraudIndicators) ─────────────────────
+#  Groupes et poids (repris de Neo4jFraudIndicators) 
 GROUPS_NEO4J = {
     'temporal': {'max': 30, 'indicators': ['DECL_TARDIVE', 'DECL_AVANT_SIN', 'FENETRE_EXPIRATION',
                                            'VEHICULE_TRES_NEUF', 'DIST_SIN_RES']},
@@ -28,7 +28,7 @@ GROUPS_NEO4J = {
     'financial': {'max': 15, 'indicators': []},  # pour le moment vide, mais extensible
 }
 
-# Points individuels (identiques à ceux de Neo4jFraudIndicators)
+# Points individuels (identiques  ceux de Neo4jFraudIndicators)
 POIDS_NEO4J = {
     "DIST_SIN_RES": {"pts_normal": 12, "pts_critique": 20},
     "USAGE_RISQUE": {"pts": 10},
@@ -45,7 +45,7 @@ POIDS_NEO4J = {
     "COMMUNAUTE_SUSPECTE": {"pts": 8},
 }
 
-# Paramètres du bonus de cumul
+# Paramtres du bonus de cumul
 BONUS_PAR_GROUPE_NEO4J = 0.15
 BONUS_MAX_NEO4J = 1.30
 SEUIL_BONUS_PLANCHER_NEO4J = 25.0
@@ -62,35 +62,35 @@ class Neo4jFraudDetector:
         self._feature_names = []
         self._cached_scores = None
         self._cached_compact = None
-        self._data_cache = {}       # X, scores normalisés
+        self._data_cache = {}       # X, scores normaliss
         self._raw_results = None    # Dict[str, Neo4jFraudResult]
 
     def _build_feature_matrix(self, results_map: Dict[str, Any]) -> pd.DataFrame:
-        """Convertit un mapping {num_sinistre: Neo4jFraudResult} en DataFrame de features numériques."""
+        """Convertit un mapping {num_sinistre: Neo4jFraudResult} en DataFrame de features numriques."""
         records = []
         for num, res in results_map.items():
             feats = {}
             # Distance
             dist = res.details.get('distance_km', 0.0) or 0.0
             feats['DIST_SIN_RES'] = dist
-            # Usage risque (1 si activé)
+            # Usage risque (1 si activ)
             feats['USAGE_RISQUE'] = 1.0 if any(i.code == 'USAGE_RISQUE' for i in res.indicateurs) else 0.0
-            # Incohérence prof/marque (1 si activé)
+            # Incohrence prof/marque (1 si activ)
             feats['INCOHER_PROF_MARQUE'] = 1.0 if any(i.code == 'INCOHER_PROF_MARQUE' for i in res.indicateurs) else 0.0
-            # Déclaration tardive : nombre de jours (si disponible) sinon 0
+            # Dclaration tardive : nombre de jours (si disponible) sinon 0
             decalage = res.details.get('decalage_declaration_jours', 0) or 0
-            feats['DECL_TARDIVE'] = max(0, decalage - 30)  # excédent par rapport au seuil
+            feats['DECL_TARDIVE'] = max(0, decalage - 30)  # excdent par rapport au seuil
             feats['DECL_AVANT_SIN'] = 1.0 if any(i.code == 'DECL_AVANT_SIN' for i in res.indicateurs) else 0.0
-            # Fenêtre expiration
+            # Fentre expiration
             delta_exp = res.details.get('delta_expiration_jours', 0) or 0
             feats['FENETRE_EXPIRATION'] = abs(delta_exp)
-            # Véhicule neuf
+            # Vhicule neuf
             age_mois = res.details.get('age_vehicule_mois', 12) or 12
             feats['VEHICULE_TRES_NEUF'] = max(0, 6 - age_mois)  # 0 si >=6 mois
-            # Kilométrage annuel
+            # Kilomtrage annuel
             km_an = res.details.get('kilometrage_annuel', 0) or 0
             feats['KM_ANORMAL'] = max(0, km_an - 40000)
-            # Réseau
+            # Rseau
             feats['ASS_RECURRENT'] = float(any(i.code == 'ASS_RECURRENT' for i in res.indicateurs))
             feats['VEH_RECURRENT'] = float(any(i.code == 'VEH_RECURRENT' for i in res.indicateurs))
             feats['TIERS_RECURRENT'] = float(any(i.code == 'TIERS_RECURRENT' for i in res.indicateurs))
@@ -117,10 +117,10 @@ class Neo4jFraudDetector:
 
     def fit(self, results_map: Dict[str, Any]):
         """
-        Entraîne les modèles ML sur les features extraites des résultats Neo4j.
+        Entrane les modles ML sur les features extraites des rsultats Neo4j.
         results_map : {num_sinistre: Neo4jFraudResult}
         """
-        print(f"🚀 Neo4jFraudDetector: Entraînement sur {len(results_map)} sinistres...")
+        print(f" Neo4jFraudDetector: Entranement sur {len(results_map)} sinistres...")
         self._raw_results = results_map
         df = self._build_feature_matrix(results_map)
         X = df.values
@@ -133,14 +133,14 @@ class Neo4jFraudDetector:
         self.models['if'].fit(X)
         if_scores = self.models['if'].score_samples(X)
 
-        # LOF (avec novelty=True pour pouvoir scorer de nouveaux échantillons)
+        # LOF (avec novelty=True pour pouvoir scorer de nouveaux chantillons)
         try:
             self.models['lof'] = LocalOutlierFactor(n_neighbors=min(20, n_samples-1),
                                                     contamination=0.1, novelty=True, n_jobs=-1)
             self.models['lof'].fit(X)
             lof_scores = -self.models['lof'].negative_outlier_factor_
         except Exception as e:
-            print(f"   ⚠️ LOF échoué: {e}, ignoré")
+            print(f"    LOF chou: {e}, ignor")
             lof_scores = np.zeros(n_samples)
 
         # Elliptic Envelope
@@ -149,7 +149,7 @@ class Neo4jFraudDetector:
             self.models['ee'].fit(X)
             ee_scores = self.models['ee'].score_samples(X)
         except Exception as e:
-            print(f"   ⚠️ EllipticEnvelope échoué: {e}, ignoré")
+            print(f"    EllipticEnvelope chou: {e}, ignor")
             ee_scores = np.zeros(n_samples)
 
         # Normalisation des scores ML
@@ -166,10 +166,10 @@ class Neo4jFraudDetector:
             'num_sinistres': list(df.index),
         }
 
-        # Pré‑calcul du score final pour chaque sinistre
+        # Prcalcul du score final pour chaque sinistre
         self._precompute_all_scores()
         self.is_fitted = True
-        print(f"✅ Neo4jFraudDetector entraîné — {len(self._cached_scores)} scores prêts")
+        print(f" Neo4jFraudDetector entran  {len(self._cached_scores)} scores prts")
 
     def _precompute_all_scores(self):
         n = len(self._data_cache['num_sinistres'])
@@ -184,7 +184,7 @@ class Neo4jFraudDetector:
                           ML_WEIGHT_NEO4J * ml_score, 1)
             final = min(final, 100.0)
             statut = 'frauduleux' if final >= 70 else ('suspect' if final >= 50 else 'normal')
-            niveau = 'critique' if final >= 85 else ('élevé' if final >= 70 else 'modéré')
+            niveau = 'critique' if final >= 85 else ('lev' if final >= 70 else 'modr')
             scores[i] = final
             compacts.append({
                 'total': final,
@@ -202,8 +202,8 @@ class Neo4jFraudDetector:
         self._cached_compact = compacts
 
     def _calculate_heuristic(self, idx: int) -> Dict:
-        """Calcule le score heuristique à partir des valeurs des indicateurs détectés."""
-        # Récupération des détails pour le sinistre idx
+        """Calcule le score heuristique  partir des valeurs des indicateurs dtects."""
+        # Rcupration des dtails pour le sinistre idx
         num = self._data_cache['num_sinistres'][idx]
         res = self._raw_results[num]
         # Initialiser les compteurs de groupe
@@ -212,14 +212,14 @@ class Neo4jFraudDetector:
         for ind in res.indicateurs:
             code = ind.code
             pts = ind.points
-            # Mapper le code à un groupe
+            # Mapper le code  un groupe
             group = None
             for g, info in GROUPS_NEO4J.items():
                 if code in info['indicators']:
                     group = g
                     break
             if group is None:
-                continue  # indicateur non catégorisé (ex: SIN_AVANT_SOUSCRIPTION non encore mappé)
+                continue  # indicateur non catgoris (ex: SIN_AVANT_SOUSCRIPTION non encore mapp)
             group_points[group] += pts
             all_triggers.append({
                 'group': group,
@@ -248,9 +248,9 @@ class Neo4jFraudDetector:
         }
 
     def predict(self, num_sinistre: str) -> Dict:
-        """Retourne le score complet pour un sinistre donné (utilisé après fit)."""
+        """Retourne le score complet pour un sinistre donn (utilis aprs fit)."""
         if not self.is_fitted:
-            raise RuntimeError("Modèle non entraîné")
+            raise RuntimeError("Modle non entran")
         try:
             idx = self._data_cache['num_sinistres'].index(num_sinistre)
         except ValueError:
@@ -258,7 +258,7 @@ class Neo4jFraudDetector:
             res = self._raw_results.get(num_sinistre)
             if res is None:
                 return {'score': 0, 'statut': 'normal', 'indicateurs': []}
-            # simple somme pondérée
+            # simple somme pondre
             gs = self._calculate_heuristic_direct(res)
             return {
                 'score': gs['heuristic_total'],
@@ -278,8 +278,8 @@ class Neo4jFraudDetector:
         }
 
     def _calculate_heuristic_direct(self, res) -> Dict:
-        # Juste pour usage sans entraînement
-        # On duplique la logique simplifiée
+        # Juste pour usage sans entranement
+        # On duplique la logique simplifie
         group_points = {'temporal': 0, 'behaviour': 0, 'network': 0, 'financial': 0}
         all_triggers = []
         for ind in res.indicateurs:

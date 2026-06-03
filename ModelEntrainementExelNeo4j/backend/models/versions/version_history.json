@@ -1499,6 +1499,713 @@
         }
       },
       "notes": "Auto-entra\u00eenement supervise",
+      "active": false
+    },
+    "60": {
+      "version": 60,
+      "created_at": "2026-05-18T16:47:44.528823",
+      "model_path": "models/versions/v60_model.pkl",
+      "metrics": {
+        "f1_score": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "auc_roc": 1.0,
+        "confusion_matrix": [
+          [
+            58849,
+            0,
+            0
+          ],
+          [
+            0,
+            27,
+            0
+          ],
+          [
+            0,
+            0,
+            909
+          ]
+        ],
+        "is_supervised": true,
+        "label_source": "auto",
+        "score_moyen": 16.87,
+        "score_median": 15.6,
+        "score_std": 8.71,
+        "score_min": 1.2,
+        "score_max": 70.0,
+        "training_samples": 59785,
+        "models_active": [
+          "if",
+          "lof",
+          "ee",
+          "xgb"
+        ],
+        "heuristic_weight": 1.0,
+        "ml_weight": 0.0,
+        "distribution": {
+          "frauduleux": {
+            "count": 0,
+            "pct": 0.0
+          },
+          "suspect": {
+            "count": 936,
+            "pct": 1.57
+          },
+          "normal": {
+            "count": 58849,
+            "pct": 98.43
+          }
+        }
+      },
+      "notes": "Auto-entra\u00eenement supervise",
+      "active": false
+    },
+    "61": {
+      "version": 61,
+      "created_at": "2026-05-18T17:48:44.260322",
+      "model_path": "models/versions/v61_model.pkl",
+      "metrics": {
+        "f1_score": 0.0561,
+        "precision": 1.0,
+        "recall": 0.0288,
+        "accuracy": 0.9848,
+        "auc_roc": 1.0,
+        "confusion_matrix": {
+          "true_negatives": 58849,
+          "false_positives": 0,
+          "false_negatives": 909,
+          "true_positives": 27
+        },
+        "is_supervised": true,
+        "label_source": "auto",
+        "score_moyen": 16.88,
+        "score_median": 15.6,
+        "score_std": 8.76,
+        "score_min": 1.2,
+        "score_max": 75.4,
+        "training_samples": 59785,
+        "models_active": [
+          "if",
+          "lof",
+          "ee",
+          "xgb"
+        ],
+        "heuristic_weight": 1.0,
+        "ml_weight": 0.0,
+        "distribution": {
+          "frauduleux": {
+            "count": 27,
+            "pct": 0.05
+          },
+          "suspect": {
+            "count": 909,
+            "pct": 1.52
+          },
+          "normal": {
+            "count": 58849,
+            "pct": 98.43
+          }
+        }
+      },
+      "notes": "Auto-entra\u00eenement supervise",
+      "active": false
+    },
+    "62": {
+      "version": 62,
+      "created_at": "2026-05-18T19:05:12.094315",
+      "model_path": "models/versions/v62_model.pkl",
+      "metrics": {
+        "is_supervised": false,
+        "score_moyen": 30.46,
+        "score_median": 30.0,
+        "score_std": 11.24,
+        "score_min": 3.0,
+        "score_max": 75.0,
+        "training_samples": 60785,
+        "models_active": [
+          "if",
+          "lof",
+          "ee"
+        ],
+        "heuristic_weight": 1.0,
+        "ml_weight": 0.0,
+        "distribution": {
+          "frauduleux": {
+            "count": 16,
+            "pct": 0.03
+          },
+          "suspect": {
+            "count": 3178,
+            "pct": 5.23
+          },
+          "normal": {
+            "count": 57591,
+            "pct": 94.75
+          }
+        }
+      },
+      "notes": "Entra\u00eenement non supervise",
+      "active": false
+    },
+    "63": {
+      "version": 63,
+      "created_at": "2026-05-18T19:05:12.711318",
+      "model_path": "C:\\Users\\firas\\Desktop\\ModelEntrainementExelNeo4j\\ModelEntrainementExelNeo4j\\backend\\models\\versions\\v63_model.pkl",
+      "metrics": {
+        "score_moyen": 30.46,
+        "pct_frauduleux": 0.03,
+        "pct_suspect": 5.23,
+        "pct_normal": 94.75,
+        "seuil_frauduleux": 70.0,
+        "seuil_suspect_min": 50.0,
+        "f1_score": "N/A",
+        "precision": "N/A",
+        "recall": "N/A",
+        "accuracy": "N/A",
+        "auc_roc": "N/A"
+      },
+      "notes": "Version initiale non supervisee",
+      "active": false
+    },
+    "64": {
+      "version": 64,
+      "created_at": "2026-05-22T17:46:23.600326",
+      "model_path": "models/versions/v64_model.pkl",
+      "metrics": {
+        "f1_score": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "auc_roc": 1.0,
+        "confusion_matrix": [
+          [
+            31346,
+            0,
+            0
+          ],
+          [
+            0,
+            1545,
+            0
+          ],
+          [
+            0,
+            0,
+            27894
+          ]
+        ],
+        "is_supervised": true,
+        "label_source": "auto",
+        "score_moyen": 37.15,
+        "score_median": 25.2,
+        "score_std": 24.42,
+        "score_min": 1.8,
+        "score_max": 84.4,
+        "training_samples": 60785,
+        "models_active": [
+          "if",
+          "lof",
+          "ee",
+          "xgb"
+        ],
+        "heuristic_weight": 0.6,
+        "ml_weight": 0.4,
+        "distribution": {
+          "frauduleux": {
+            "count": 1153,
+            "pct": 1.9
+          },
+          "suspect": {
+            "count": 28286,
+            "pct": 46.53
+          },
+          "normal": {
+            "count": 31346,
+            "pct": 51.57
+          }
+        }
+      },
+      "notes": "Auto-entra\u00eenement supervise",
+      "active": false
+    },
+    "65": {
+      "version": 65,
+      "created_at": "2026-05-22T18:33:09.959865",
+      "model_path": "models/versions/v65_model.pkl",
+      "metrics": {
+        "f1_score": 0.0437,
+        "precision": 1.0,
+        "recall": 0.0223,
+        "accuracy": 0.9647,
+        "auc_roc": 1.0,
+        "confusion_matrix": {
+          "true_negatives": 58590,
+          "false_positives": 0,
+          "false_negatives": 2146,
+          "true_positives": 49
+        },
+        "is_supervised": true,
+        "label_source": "manual",
+        "score_moyen": 19.73,
+        "score_median": 18.0,
+        "score_std": 10.41,
+        "score_min": 1.8,
+        "score_max": 77.2,
+        "training_samples": 60785,
+        "models_active": [
+          "if",
+          "lof",
+          "ee",
+          "xgb"
+        ],
+        "heuristic_weight": 0.6,
+        "ml_weight": 0.4,
+        "distribution": {
+          "frauduleux": {
+            "count": 49,
+            "pct": 0.08
+          },
+          "suspect": {
+            "count": 2032,
+            "pct": 3.34
+          },
+          "normal": {
+            "count": 58704,
+            "pct": 96.58
+          }
+        }
+      },
+      "notes": "Auto-entra\u00eenement supervise",
+      "active": false
+    },
+    "66": {
+      "version": 66,
+      "created_at": "2026-05-22T19:07:22.885252",
+      "model_path": "models/versions/v66_model.pkl",
+      "metrics": {
+        "f1_score": 0.0437,
+        "precision": 1.0,
+        "recall": 0.0223,
+        "accuracy": 0.9647,
+        "auc_roc": 1.0,
+        "confusion_matrix": {
+          "true_negatives": 58590,
+          "false_positives": 0,
+          "false_negatives": 2146,
+          "true_positives": 49
+        },
+        "is_supervised": true,
+        "label_source": "manual",
+        "score_moyen": 19.73,
+        "score_median": 18.0,
+        "score_std": 10.41,
+        "score_min": 1.8,
+        "score_max": 77.2,
+        "training_samples": 60785,
+        "models_active": [
+          "if",
+          "lof",
+          "ee",
+          "xgb"
+        ],
+        "heuristic_weight": 0.6,
+        "ml_weight": 0.4,
+        "distribution": {
+          "frauduleux": {
+            "count": 49,
+            "pct": 0.08
+          },
+          "suspect": {
+            "count": 2032,
+            "pct": 3.34
+          },
+          "normal": {
+            "count": 58704,
+            "pct": 96.58
+          }
+        }
+      },
+      "notes": "Auto-entra\u00eenement supervise",
+      "active": false
+    },
+    "70": {
+      "version": 70,
+      "created_at": "2026-05-22T19:48:41.568174",
+      "model_path": "models/versions/v70_model.pkl",
+      "metrics": {
+        "f1_score": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "auc_roc": 1.0,
+        "confusion_matrix": {
+          "true_negatives": 58590,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "true_positives": 2195
+        },
+        "is_supervised": true,
+        "label_source": "manual",
+        "score_moyen": 3.61,
+        "score_median": 0.0,
+        "score_std": 18.65,
+        "score_min": 0.0,
+        "score_max": 100.0,
+        "training_samples": 60785,
+        "models_active": [
+          "if",
+          "lof",
+          "ee",
+          "xgb"
+        ],
+        "heuristic_weight": 0.6,
+        "ml_weight": 0.4,
+        "distribution": {
+          "frauduleux": {
+            "count": 2195,
+            "pct": 3.61
+          },
+          "suspect": {
+            "count": 0,
+            "pct": 0.0
+          },
+          "normal": {
+            "count": 58590,
+            "pct": 96.39
+          }
+        }
+      },
+      "notes": "Auto-entra\u00eenement supervise",
+      "active": false
+    },
+    "77": {
+      "version": 77,
+      "created_at": "2026-05-23T17:59:54.687098",
+      "model_path": "models/versions/v77_model.pkl",
+      "metrics": {
+        "f1_score": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "auc_roc": 1.0,
+        "confusion_matrix": {
+          "true_negatives": 58590,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "true_positives": 2195
+        },
+        "is_supervised": true,
+        "label_source": "manual",
+        "score_moyen": 3.61,
+        "score_median": 0.0,
+        "score_std": 18.65,
+        "score_min": 0.0,
+        "score_max": 100.0,
+        "training_samples": 60785,
+        "models_active": [
+          "if",
+          "lof",
+          "ee",
+          "xgb"
+        ],
+        "heuristic_weight": 0.6,
+        "ml_weight": 0.4,
+        "distribution": {
+          "frauduleux": {
+            "count": 2195,
+            "pct": 3.61
+          },
+          "suspect": {
+            "count": 0,
+            "pct": 0.0
+          },
+          "normal": {
+            "count": 58590,
+            "pct": 96.39
+          }
+        }
+      },
+      "notes": "Auto-entra\u00eenement supervise",
+      "active": false
+    },
+    "78": {
+      "version": 78,
+      "created_at": "2026-05-24T08:49:01.251495",
+      "model_path": "models/versions/v78_model.pkl",
+      "metrics": {
+        "is_supervised": false,
+        "score_moyen": 25.68,
+        "score_median": 24.3,
+        "score_std": 10.89,
+        "score_min": 3.5,
+        "score_max": 76.4,
+        "training_samples": 59785,
+        "models_active": [
+          "if",
+          "lof",
+          "ee"
+        ],
+        "heuristic_weight": 0.6,
+        "ml_weight": 0.4,
+        "distribution": {
+          "frauduleux": {
+            "count": 19,
+            "pct": 0.03
+          },
+          "suspect": {
+            "count": 1542,
+            "pct": 2.58
+          },
+          "normal": {
+            "count": 58224,
+            "pct": 97.39
+          }
+        }
+      },
+      "notes": "Entra\u00eenement non supervise",
+      "config_snapshot": {
+        "group_weights": {
+          "financial": 35,
+          "temporal": 28,
+          "frequency": 20,
+          "network": 10,
+          "driver": 6,
+          "profile": 1
+        },
+        "indicator_weights": {
+          "FIN_3STD": 25,
+          "FIN_3STD_PLUS": 3,
+          "FIN_RATIO_5X": 14,
+          "FIN_RATIO_3X": 10,
+          "FIN_RATIO_2X": 7,
+          "FIN_RATIO_15X": 4,
+          "FIN_10X_PRIME": 20,
+          "FIN_5X_PRIME": 10,
+          "FIN_3X_PRIME": 6,
+          "FIN_EXPERT_COUT": 8,
+          "FIN_AGE_MONTANT": 6,
+          "FIN_PV_RATIO": 5,
+          "TMP_15J": 18,
+          "TMP_7J_EFFET": 28,
+          "TMP_7J_EXP": 18,
+          "TMP_NUIT": 8,
+          "TMP_WEEKEND": 5,
+          "TMP_CLUSTER_VEH": 7,
+          "TMP_CLUSTER_CLI": 7,
+          "FRQ_7": 25,
+          "FRQ_3": 16,
+          "FRQ_VEH5": 12,
+          "FRQ_VEH3": 8,
+          "FRQ_VEH2": 5,
+          "FRQ_AVENANTS": 7,
+          "FRQ_AVENANT_RECENT": 12,
+          "NET_FRONTIERE": 10,
+          "NET_ADVERSE": 10,
+          "NET_TEMOIN": 7,
+          "NET_EXPERT_VEH": 4,
+          "NET_GARAGE": 5,
+          "NET_LIEU": 4,
+          "NET_COMBO_JOB": 3,
+          "DRV_NOTE_TF": 4,
+          "DRV_NOTE_F": 2,
+          "DRV_KM": 2,
+          "DRV_DIST_SIN": 2,
+          "DRV_DIST_TRV": 1,
+          "PRF_JOB": 2,
+          "PRF_USAGE": 1
+        },
+        "thresholds": {
+          "normal_max": 49.99,
+          "suspect_min": 50.0,
+          "frauduleux": 70.0
+        },
+        "version": "1.12",
+        "created_at": "2026-05-22T16:23:01.008366",
+        "notes": "Update from dashboard"
+      },
+      "report": {
+        "changes": {
+          "thresholds": {
+            "before": null,
+            "after": {
+              "normal_max": 49.99,
+              "suspect_min": 50.0,
+              "frauduleux": 70.0
+            }
+          },
+          "group_weights": {
+            "before": null,
+            "after": {
+              "financial": 35,
+              "temporal": 28,
+              "frequency": 20,
+              "network": 10,
+              "driver": 6,
+              "profile": 1
+            }
+          },
+          "indicator_weights": {
+            "before": null,
+            "after": {
+              "FIN_3STD": 25,
+              "FIN_3STD_PLUS": 3,
+              "FIN_RATIO_5X": 14,
+              "FIN_RATIO_3X": 10,
+              "FIN_RATIO_2X": 7,
+              "FIN_RATIO_15X": 4,
+              "FIN_10X_PRIME": 20,
+              "FIN_5X_PRIME": 10,
+              "FIN_3X_PRIME": 6,
+              "FIN_EXPERT_COUT": 8,
+              "FIN_AGE_MONTANT": 6,
+              "FIN_PV_RATIO": 5,
+              "TMP_15J": 18,
+              "TMP_7J_EFFET": 28,
+              "TMP_7J_EXP": 18,
+              "TMP_NUIT": 8,
+              "TMP_WEEKEND": 5,
+              "TMP_CLUSTER_VEH": 7,
+              "TMP_CLUSTER_CLI": 7,
+              "FRQ_7": 25,
+              "FRQ_3": 16,
+              "FRQ_VEH5": 12,
+              "FRQ_VEH3": 8,
+              "FRQ_VEH2": 5,
+              "FRQ_AVENANTS": 7,
+              "FRQ_AVENANT_RECENT": 12,
+              "NET_FRONTIERE": 10,
+              "NET_ADVERSE": 10,
+              "NET_TEMOIN": 7,
+              "NET_EXPERT_VEH": 4,
+              "NET_GARAGE": 5,
+              "NET_LIEU": 4,
+              "NET_COMBO_JOB": 3,
+              "DRV_NOTE_TF": 4,
+              "DRV_NOTE_F": 2,
+              "DRV_KM": 2,
+              "DRV_DIST_SIN": 2,
+              "DRV_DIST_TRV": 1,
+              "PRF_JOB": 2,
+              "PRF_USAGE": 1
+            }
+          },
+          "heuristic_weight": {
+            "before": 0.6,
+            "after": 0.6
+          },
+          "ml_weight": {
+            "before": 0.4,
+            "after": 0.4
+          },
+          "selected_feature_count": {
+            "before": null,
+            "after": 77
+          },
+          "models_active": {
+            "before": [
+              "if",
+              "lof",
+              "ee",
+              "xgb"
+            ],
+            "after": [
+              "if",
+              "lof",
+              "ee"
+            ]
+          },
+          "xgb_params": {
+            "before": null,
+            "after": null
+          }
+        },
+        "summary": "Changed keys: thresholds, group_weights, indicator_weights, heuristic_weight, ml_weight, selected_feature_count, models_active, xgb_params"
+      },
+      "analyst_comment": "",
+      "active": false
+    },
+    "79": {
+      "version": 79,
+      "created_at": "2026-05-24T08:49:01.735656",
+      "model_path": "C:\\Users\\firas\\Documents\\ModelEntrainementExelNeo4j\\ModelEntrainementExelNeo4j\\backend\\models\\versions\\v79_model.pkl",
+      "metrics": {
+        "score_moyen": 25.68,
+        "pct_frauduleux": 0.03,
+        "pct_suspect": 2.58,
+        "pct_normal": 97.39,
+        "seuil_frauduleux": 70.0,
+        "seuil_suspect_min": 50.0,
+        "f1_score": "N/A",
+        "precision": "N/A",
+        "recall": "N/A",
+        "accuracy": "N/A",
+        "auc_roc": "N/A"
+      },
+      "notes": "Version initiale non supervisee",
+      "config_snapshot": {
+        "group_weights": {
+          "financial": 35,
+          "temporal": 28,
+          "frequency": 20,
+          "network": 10,
+          "driver": 6,
+          "profile": 1
+        },
+        "indicator_weights": {
+          "FIN_3STD": 25,
+          "FIN_3STD_PLUS": 3,
+          "FIN_RATIO_5X": 14,
+          "FIN_RATIO_3X": 10,
+          "FIN_RATIO_2X": 7,
+          "FIN_RATIO_15X": 4,
+          "FIN_10X_PRIME": 20,
+          "FIN_5X_PRIME": 10,
+          "FIN_3X_PRIME": 6,
+          "FIN_EXPERT_COUT": 8,
+          "FIN_AGE_MONTANT": 6,
+          "FIN_PV_RATIO": 5,
+          "TMP_15J": 18,
+          "TMP_7J_EFFET": 28,
+          "TMP_7J_EXP": 18,
+          "TMP_NUIT": 8,
+          "TMP_WEEKEND": 5,
+          "TMP_CLUSTER_VEH": 7,
+          "TMP_CLUSTER_CLI": 7,
+          "FRQ_7": 25,
+          "FRQ_3": 16,
+          "FRQ_VEH5": 12,
+          "FRQ_VEH3": 8,
+          "FRQ_VEH2": 5,
+          "FRQ_AVENANTS": 7,
+          "FRQ_AVENANT_RECENT": 12,
+          "NET_FRONTIERE": 10,
+          "NET_ADVERSE": 10,
+          "NET_TEMOIN": 7,
+          "NET_EXPERT_VEH": 4,
+          "NET_GARAGE": 5,
+          "NET_LIEU": 4,
+          "NET_COMBO_JOB": 3,
+          "DRV_NOTE_TF": 4,
+          "DRV_NOTE_F": 2,
+          "DRV_KM": 2,
+          "DRV_DIST_SIN": 2,
+          "DRV_DIST_TRV": 1,
+          "PRF_JOB": 2,
+          "PRF_USAGE": 1
+        },
+        "thresholds": {
+          "normal_max": 49.99,
+          "suspect_min": 50.0,
+          "frauduleux": 70.0
+        },
+        "version": "1.12",
+        "created_at": "2026-05-22T16:23:01.008366",
+        "notes": "Update from dashboard"
+      },
+      "report": null,
+      "analyst_comment": "",
       "active": true
     }
   },

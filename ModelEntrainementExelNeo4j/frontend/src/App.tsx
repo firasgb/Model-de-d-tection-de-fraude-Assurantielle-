@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Shield, AlertTriangle, CheckCircle, FileText, Brain, Activity, Database } from 'lucide-react'
+import { Shield, AlertTriangle, CheckCircle, FileText, Brain, Activity, Database, Settings, Upload, BarChart3, Network, History, RefreshCw } from 'lucide-react'
 
 interface Prediction {
   sinistre_id: number
@@ -26,15 +26,17 @@ interface Sinistre {
   STATUS: string
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000'
 
 function App() {
-  const [view, setView] = useState<'dashboard' | 'sinistres' | 'detail'>('dashboard')
+  const [view, setView] = useState<'dashboard' | 'sinistres' | 'detail' | 'configuration' | 'versions' | 'graph' | 'reseaux' | 'recherche'>('dashboard')
   const [sinistres, setSinistres] = useState<Sinistre[]>([])
   const [selectedSinistre, setSelectedSinistre] = useState<Prediction | null>(null)
   const [indicators, setIndicators] = useState<Indicator[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [stats, setStats] = useState<any>(null)
+  const [modelInfo, setModelInfo] = useState<any>(null)
 
   useEffect(() => {
     loadData()
@@ -147,6 +149,15 @@ function App() {
                 <FileText className="h-4 w-4 inline mr-2" />
                 Sinistres
               </button>
+              <button
+                onClick={() => setView('configuration')}
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  view === 'configuration' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <Settings className="h-4 w-4 inline mr-2" />
+                Paramètres
+              </button>
             </div>
           </div>
         </div>
@@ -217,13 +228,31 @@ function App() {
 
             {/* Actions */}
             <div className="bg-white rounded-xl shadow-sm p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Commencer</h3>
-              <button
-                onClick={() => setView('sinistres')}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition"
-              >
-                Analyser les Sinistres
-              </button>
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Actions</h3>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setView('sinistres')}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition"
+                >
+                  Analyser les Sinistres
+                </button>
+                <button
+                  onClick={async () => {
+                    if (confirm('REntrainment non supervisé ? Cela recreera les labels automatiquement.')) {
+                      const res = await fetch(API_URL + '/model/train', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mode: 'unsupervised', notes: 'REntrainment non supervisé manuel' })
+                      });
+                      const data = await res.json();
+                      alert(data.message || 'REntrainment lancé');
+                    }
+                  }}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition"
+                >
+                  REntrainment Non Supervisé
+                </button>
+              </div>
             </div>
           </div>
         )}

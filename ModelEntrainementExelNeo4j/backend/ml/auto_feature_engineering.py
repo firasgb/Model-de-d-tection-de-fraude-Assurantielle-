@@ -1,45 +1,45 @@
 """
-PATCH auto_feature_engineering.py — VERSION 3.9
+PATCH auto_feature_engineering.py  VERSION 3.9
 ================================================
-Corrections apportées vs v3.8 :
+Corrections apportes vs v3.8 :
 
-1. MERGE TIERS étendu
-   - Jointure via CODE_CLIENT (contrat) → UUID (tiers) POUR TOUS PARTY_TYPE
+1. MERGE TIERS tendu
+   - Jointure via CODE_CLIENT (contrat)  UUID (tiers) POUR TOUS PARTY_TYPE
    - Suppression du filtre PARTY_TYPE == 'ASSURE' ; tous les tiers sont maintenant joints
-   - Préfixe changé de 'assure_' à 'tiers_' pour refléter la généralisation
-   - Déduplication tiers : garde la ligne avec le plus de valeurs non-nulles
+   - Prfixe chang de 'assure_'  'tiers_' pour reflter la gnralisation
+   - Dduplication tiers : garde la ligne avec le plus de valeurs non-nulles
 
-2. MERGE ASSURÉS corrigé
-   - Jointure via CODE_CLIENT (contrat) → UUID (tiers) UNIQUEMENT
+2. MERGE ASSURS corrig
+   - Jointure via CODE_CLIENT (contrat)  UUID (tiers) UNIQUEMENT
    - Suppression du merge adverse inutile sur IMMATRICULATION_ADVERSE
-     (les adverses ne sont PAS des assurés ; leurs données ne devraient
-     pas être jointes ligne-à-ligne sur le sinistre)
-   - Déduplication assurés : garde la ligne avec le plus de valeurs non-nulles
+     (les adverses ne sont PAS des assurs ; leurs donnes ne devraient
+     pas tre jointes ligne--ligne sur le sinistre)
+   - Dduplication assurs : garde la ligne avec le plus de valeurs non-nulles
 
-3. INTÉGRATION DU GÉOCODEUR (TunisiaGeocoder)
-   - Si adresse_sinistre / adresse_residence / adresse_travail présentes
-     → coordonnées GPS calculées via gazetteer offline
-   - Les colonnes GPS sont injectées dans df AVANT _compute_distances
+3. INTGRATION DU GOCODEUR (TunisiaGeocoder)
+   - Si adresse_sinistre / adresse_residence / adresse_travail prsentes
+      coordonnes GPS calcules via gazetteer offline
+   - Les colonnes GPS sont injectes dans df AVANT _compute_distances
 
 4. NOUVELLES FEATURES UTILES
    - ratio_montant_prime        : TOTALREGLEMENT / PRIME contrat (corrige biais marque)
-   - sinistre_heure_nuit        : survenance entre 0h et 5h (fuite témoins)
-   - sinistre_weekend           : samedi ou dimanche (indépendant de is_weekend_DATE_…)
-   - avenant_proche_sinistre_30j: avenant signé dans les 30j avant le sinistre
+   - sinistre_heure_nuit        : survenance entre 0h et 5h (fuite tmoins)
+   - sinistre_weekend           : samedi ou dimanche (indpendant de is_weekend_DATE_)
+   - avenant_proche_sinistre_30j: avenant sign dans les 30j avant le sinistre
 
-5. FILTRE DE VALIDITÉ DES FEATURES
-   - Nouvelle méthode _validate_features() appelée après construction de fd
+5. FILTRE DE VALIDIT DES FEATURES
+   - Nouvelle mthode _validate_features() appele aprs construction de fd
    - Retire les features :
        * variance nulle ou quasi-nulle (< 1e-8)
-       * > 95 % de zéros (peu informatives pour l'anomalie)
-       * corrélation > 0.98 avec une feature déjà retenue (redondance)
-   - Log détaillé des features retirées
+       * > 95 % de zros (peu informatives pour l'anomalie)
+       * corrlation > 0.98 avec une feature dj retenue (redondance)
+   - Log dtaill des features retires
 
 6. CORRECTION CLASSEMENT GROUPE "other"
    - expert_cout_anormal, taux_remplacement_garage, freq_sinistres_pv,
-     age_vehicule_ans → correctement classés dans financial / network / temporal
-     via _infer_feature_group (main.py) — aucun changement ici, mais
-     les features sont désormais correctement nommées pour le mapping.
+     age_vehicule_ans  correctement classs dans financial / network / temporal
+     via _infer_feature_group (main.py)  aucun changement ici, mais
+     les features sont dsormais correctement nommes pour le mapping.
 
 Usage (aucun changement d'API publique) :
     fe = AutoFeatureEngineer()
@@ -57,7 +57,15 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
-# Import depuis geo_utils pour éviter la duplication
+# Import du dtecteur de communauts (optionnel)
+try:
+    from ml.community_detector import CommunityDetector
+    COMMUNITY_DETECTOR_AVAILABLE = True
+except ImportError:
+    COMMUNITY_DETECTOR_AVAILABLE = False
+    CommunityDetector = None  # Pour viter les erreurs de rfrence
+
+# Import depuis geo_utils pour viter la duplication
 try:
     from ml.geo_utils import haversine_km as haversine_distance
 except ImportError:
@@ -81,7 +89,7 @@ except ImportError:
 warnings.filterwarnings("ignore")
 
 
-# ─── Helpers colonnes ────────────────────────────────────────────────────────
+#  Helpers colonnes 
 
 def _find_col(df, candidates):
     for c in candidates:
@@ -110,7 +118,7 @@ def _find_tiers_col(df, *patterns):
     return None
 
 
-# ─── Table de directions ──────────────────────────────────────────────────────
+#  Table de directions 
 
 SUSPICIOUS_DIRECTION: Dict[str, str] = {
     "num_totalreglement": "high", "std_totalreglement": "high",
@@ -179,21 +187,24 @@ def _get_direction(feature_name: str) -> str:
     return _DEFAULT_DIRECTION
 
 
-# ─── Classe principale ────────────────────────────────────────────────────────
+#  Classe principale 
 
 class AutoFeatureEngineer:
-    """Extraction automatique de features anti-fraude — v3.8."""
+    """Extraction automatique de features anti-fraude  v3.8."""
 
-    def __init__(self, geocoder=None):
+    def __init__(self, geocoder=None, community_detector=None):
         """
         geocoder : instance de TunisiaGeocoder (optionnel).
-            Si None, le géocodage textuel (identité adresses) reste actif
-            mais aucun appel GPS n'est effectué.
+            Si None, le gocodage textuel (identit adresses) reste actif
+            mais aucun appel GPS n'est effectu.
+        community_detector : instance de CommunityDetector (optionnel).
+            Si None, aucune dtection de communaut n'est effectue.
         """
         self.scaler = StandardScaler()
         self.feature_names: List[str] = []
         self.feature_importance: Dict[str, float] = {}
         self._geocoder = geocoder  # TunisiaGeocoder ou None
+        self.community_detector = community_detector  # CommunityDetector ou None
 
         self._IGNORE = {
             "PACK", "contrat_PACK", "STATUS", "DAMAGE_TYPE",
@@ -212,9 +223,35 @@ class AutoFeatureEngineer:
             "ID_", "NUM_", "UUID", "CODE_", "contrat_ID_", "contrat_NUM_",
             "contrat_CODE_", "tiers_ID_", "tiers_NUM_", "tiers_UUID",
             "adverse_ID_", "adverse_NUM_", "adverse_UUID",
-        )
+                 )
 
-    # ─── Helpers temporels ────────────────────────────────────────────────────
+    #  Score de communaut (NOUVEAU) 
+    
+    def _compute_community_score(self, sinistre_id: str) -> float:
+        """
+        Calcule un score bas sur l'appartenance  des communauts sospectueuses
+        Retourne un score entre 0 et 100
+        """
+        if self.community_detector is None:
+            return 0.0
+        
+        try:
+            # Rcuprer l'analyse complte des communauts
+            communities_data = self.community_detector.get_full_analysis()
+            
+            # Trouver la communaut  laquelle appartient ce sinistre
+            for community in communities_data.get("communities", []):
+                if str(sinistre_id) in [str(sid) for sid in community.get("sinistres_ids", [])]:
+                    # Retourner un score normalis bas sur le niveau de la communaut
+                    level_scores = {"modr": 30, "lev": 60, "critique": 90}
+                    return level_scores.get(community.get("niveau", "modr"), 30)
+            
+            return 0.0  # Pas de communaut sospectueuse trouve
+        except Exception as e:
+            print(f"Erreur lors du calcul du score de communaut : {e}")
+            return 0.0
+
+    #  Helpers temporels 
 
     def _past_count(self, df, key_col):
         if key_col not in df.columns:
@@ -284,25 +321,25 @@ class AutoFeatureEngineer:
         temp["_past_median"] = past_medians
         return temp.sort_values("_idx")["_past_median"].values
 
-    # ─── API publique ─────────────────────────────────────────────────────────
+    #  API publique 
 
     def fit_transform(self, sinistres_df, contrats_df=None, tiers_df=None):
         X, _ = self.fit_transform_with_raw(sinistres_df, contrats_df, tiers_df)
         return X
 
     def fit_transform_with_raw(self, sinistres_df, contrats_df=None, tiers_df=None):
-        print("🔍 AUTO-FEATURE v3.8: Extraction des features...")
+        print(" AUTO-FEATURE v3.8: Extraction des features...")
         n_original = len(sinistres_df)
         df = self._merge(sinistres_df, contrats_df, tiers_df)
 
         if len(df) != n_original:
-            print(f"   ⚠️ MERGE a créé des doublons : {n_original} → {len(df)}, correction...")
+            print(f"    MERGE a cr des doublons : {n_original}  {len(df)}, correction...")
             df = df.iloc[:n_original].copy()
 
-        # ── Injection des coordonnées GPS via géocodeur ──────────────────
+        #  Injection des coordonnes GPS via gocodeur 
         df = self._inject_gps(df)
 
-        # ── Construction du dictionnaire de features ─────────────────────
+        #  Construction du dictionnaire de features 
         fd: Dict[str, np.ndarray] = {}
         fd.update(self._numeric(df))
         fd.update(self._categorical(df))
@@ -312,33 +349,47 @@ class AutoFeatureEngineer:
         fd.update(self._fraud_business(df))
         fd.update(self._new_indicators(df))
 
-        # ── Assemblage ───────────────────────────────────────────────────
+        #  Assemblage 
         feat = pd.DataFrame(fd).fillna(0).replace([np.inf, -np.inf], 0)
-        assert len(feat) == n_original, f"Taille features incohérente : {len(feat)} ≠ {n_original}"
+        assert len(feat) == n_original, f"Taille features incohrente : {len(feat)}  {n_original}"
+
+        # --- SCORE DE COMMUNAUT (NOUVEAU) -------------------------------
+        if self.community_detector is not None and len(df) > 0:
+            print("    Calcul du score de communaut...")
+            community_scores = []
+            # Utiliser NUM_SINISTRE comme identifiant si disponible, sinon l'index
+            sinistre_ids = df['NUM_SINISTRE'].astype(str) if 'NUM_SINISTRE' in df.columns else [str(i) for i in range(len(df))]
+            
+            for sinistre_id in sinistre_ids:
+                community_score = self._compute_community_score(sinistre_id)
+                community_scores.append(community_score)
+            
+            feat['community_score'] = community_scores
+            print(f"    Score de communaut calcul : moy={np.mean(community_scores):.2f}, max={np.max(community_scores):.2f}")
 
         for col in feat.columns:
             if feat[col].dtype == "object":
                 feat[col] = pd.to_numeric(feat[col], errors="coerce").fillna(0)
 
-        # ── Filtre de validité (NOUVEAU v3.8) ────────────────────────────
+        #  Filtre de validit (NOUVEAU v3.8) 
         feat = self._validate_features(feat)
 
         raw_df = feat.copy()
         self.feature_names = list(feat.columns)
         X_scaled = self.scaler.fit_transform(feat)
 
-        print(f"✅ AUTO-FEATURE v3.8 : {len(self.feature_names)} features valides, {X_scaled.shape[0]} lignes")
+        print(f" AUTO-FEATURE v3.8 : {len(self.feature_names)} features valides, {X_scaled.shape[0]} lignes")
         return X_scaled, raw_df
 
-    # ─── FILTRE DE VALIDITÉ (NOUVEAU v3.8) ───────────────────────────────────
+    #  FILTRE DE VALIDIT (NOUVEAU v3.8) 
 
     def _validate_features(self, feat: pd.DataFrame) -> pd.DataFrame:
         """
         Supprime les features peu informatives :
           1. Variance nulle (constante)
-          2. > 95 % de zéros (signal quasi-absent)
-          3. Corrélation > 0.98 avec une feature déjà retenue (doublon)
-        Retourne le DataFrame filtré.
+          2. > 95 % de zros (signal quasi-absent)
+          3. Corrlation > 0.98 avec une feature dj retenue (doublon)
+        Retourne le DataFrame filtr.
         """
         n = len(feat)
         to_drop = set()
@@ -347,12 +398,12 @@ class AutoFeatureEngineer:
         zero_var = feat.columns[feat.var() < 1e-8].tolist()
         to_drop.update(zero_var)
         if zero_var:
-            print(f"   🗑️  Variance nulle : {len(zero_var)} features supprimées")
+            print(f"     Variance nulle : {len(zero_var)} features supprimes")
 
-        # 2. Trop de zéros (> 95 %)
+        # 2. Trop de zros (> 95 %)
         pct_zero = (feat == 0).mean()
         almost_empty = pct_zero[pct_zero > 0.95].index.tolist()
-        # Exception : garder les features binaires importantes même si rares
+        # Exception : garder les features binaires importantes mme si rares
         important_binary = {
             "sinistre_moins_7j_apres_effet", "sinistre_moins_7j_expiration",
             "montant_3std_suspect", "client_plus7_sinistres_12m",
@@ -362,9 +413,9 @@ class AutoFeatureEngineer:
         almost_empty = [c for c in almost_empty if c not in important_binary]
         to_drop.update(almost_empty)
         if almost_empty:
-            print(f"   🗑️  Quasi-vides (>95% zéros) : {len(almost_empty)} features supprimées")
+            print(f"     Quasi-vides (>95% zros) : {len(almost_empty)} features supprimes")
 
-        # 3. Corrélation excessive (dédoublonnage)
+        # 3. Corrlation excessive (ddoublonnage)
         remaining = [c for c in feat.columns if c not in to_drop]
         if len(remaining) > 1:
             corr = feat[remaining].corr().abs()
@@ -372,22 +423,22 @@ class AutoFeatureEngineer:
             high_corr = [col for col in upper.columns if any(upper[col] > 0.98)]
             to_drop.update(high_corr)
             if high_corr:
-                print(f"   🗑️  Corrélation >0.98 : {len(high_corr)} features supprimées")
+                print(f"     Corrlation >0.98 : {len(high_corr)} features supprimes")
 
         kept_before = len(feat.columns)
         feat = feat.drop(columns=list(to_drop), errors="ignore")
-        print(f"   ✅ Filtre validité : {kept_before} → {len(feat.columns)} features retenues")
+        print(f"    Filtre validit : {kept_before}  {len(feat.columns)} features retenues")
         return feat
 
-    # ─── MERGE — v3.8 : seulement contrats + assurés ─────────────────────────
+    #  MERGE  v3.8 : seulement contrats + assurs 
 
     def _merge(self, sinistres, contrats, tiers):
         df = sinistres.copy().reset_index(drop=True)
 
-        # ── 1. Contrats via NUM_CONTRAT → NUMERO_POLICE ───────────────────
+        #  1. Contrats via NUM_CONTRAT  NUMERO_POLICE 
         if contrats is not None and "NUM_CONTRAT" in df.columns:
             contrats_dedup = contrats.drop_duplicates(subset=["NUMERO_POLICE"], keep="first")
-            print(f"   Contrats : {len(contrats)} → {len(contrats_dedup)} après déduplication")
+            print(f"   Contrats : {len(contrats)}  {len(contrats_dedup)} aprs dduplication")
             n_avant = len(df)
             df = df.merge(
                 contrats_dedup.add_prefix("contrat_"),
@@ -396,23 +447,23 @@ class AutoFeatureEngineer:
                 how="left",
             )
             if len(df) != n_avant:
-                print(f"   ⚠️  Doublons contrats : {n_avant} → {len(df)}, correction...")
+                print(f"     Doublons contrats : {n_avant}  {len(df)}, correction...")
                 df = df.iloc[:n_avant].copy()
             matched = df["contrat_NUMERO_POLICE"].notna().sum()
-            print(f"   🔗 Merge contrats : {matched}/{n_avant} matchés ({matched/n_avant*100:.1f}%)")
+            print(f"    Merge contrats : {matched}/{n_avant} matchs ({matched/n_avant*100:.1f}%)")
 
-        # ── 2. Tiers via contrat_CODE_CLIENT → UUID (tous PARTY_TYPE) ─────
+        #  2. Tiers via contrat_CODE_CLIENT  UUID (tous PARTY_TYPE) 
         if (tiers is not None
                 and "contrat_CODE_CLIENT" in df.columns
                 and "UUID" in tiers.columns):
 
             tiers_merged = tiers.copy()
 
-            print(f"\n   📋 Diagnostic jointure tiers :")
+            print(f"\n    Diagnostic jointure tiers :")
             print(f"      contrat_CODE_CLIENT dtype : {df['contrat_CODE_CLIENT'].dtype}")
             print(f"      UUID dtype                : {tiers_merged['UUID'].dtype}")
 
-            # Normalisation en Int64 pour éviter "12345" vs 12345.0
+            # Normalisation en Int64 pour viter "12345" vs 12345.0
             df["_join_key"] = pd.to_numeric(
                 df["contrat_CODE_CLIENT"], errors="coerce"
             ).astype("Int64")
@@ -428,17 +479,17 @@ class AutoFeatureEngineer:
             print(f"      Codes contrat : {len(codes_sin)} | UUIDs tiers : {len(codes_tiers)} | Overlap : {len(overlap)}")
 
             if len(overlap) == 0:
-                print(f"      ⚠️  AUCUN OVERLAP — vérifier que CODE_CLIENT = UUID dans tiers")
+                print(f"        AUCUN OVERLAP  vrifier que CODE_CLIENT = UUID dans tiers")
             else:
-                print(f"      ✅ {len(overlap)} valeurs communes")
+                print(f"       {len(overlap)} valeurs communes")
 
-            # Déduplication tiers : garder la ligne avec le plus de valeurs non-nulles
+            # Dduplication tiers : garder la ligne avec le plus de valeurs non-nulles
             tiers_sorted = tiers_merged.copy()
             tiers_sorted["_non_null"] = tiers_sorted.notna().sum(axis=1)
             tiers_sorted = tiers_sorted.sort_values("_non_null", ascending=False)
             tiers_dedup = tiers_sorted.drop_duplicates(subset=["_join_key"], keep="first")
             tiers_dedup = tiers_dedup.drop(columns=["_non_null"])
-            print(f"      Tiers dédupliqués (max non-null) : {len(tiers_merged)} → {len(tiers_dedup)}")
+            print(f"      Tiers ddupliqus (max non-null) : {len(tiers_merged)}  {len(tiers_dedup)}")
 
             n_avant = len(df)
             df = df.merge(
@@ -449,11 +500,11 @@ class AutoFeatureEngineer:
             )
             df.drop(columns=["_join_key", "tiers__join_key"], inplace=True, errors="ignore")
             if len(df) != n_avant:
-                print(f"   ⚠️  Doublons tiers : {n_avant} → {len(df)}, correction...")
+                print(f"     Doublons tiers : {n_avant}  {len(df)}, correction...")
                 df = df.iloc[:n_avant].copy()
 
             n_matched = df["tiers_UUID"].notna().sum() if "tiers_UUID" in df.columns else 0
-            print(f"      ✅ Tiers matchés : {n_matched}/{n_avant} ({n_matched/n_avant*100:.1f}%)")
+            print(f"       Tiers matchs : {n_matched}/{n_avant} ({n_matched/n_avant*100:.1f}%)")
 
             for col in ["tiers_adresse_residence", "tiers_adresse_travail",
                         "tiers_JOB", "tiers_note_conducteur"]:
@@ -461,31 +512,31 @@ class AutoFeatureEngineer:
                     nn = df[col].notna().sum()
                     print(f"      {col} : {nn} valeurs non-nulles")
                 else:
-                    print(f"      ⚠️  {col} absente après merge")
+                    print(f"        {col} absente aprs merge")
 
-        # NOTE : les données tiers (tous PARTY_TYPE) sont jointes ici via CODE_CLIENT = UUID.
-        # L'indicateur adverse_repete est calculé directement sur
+        # NOTE : les donnes tiers (tous PARTY_TYPE) sont jointes ici via CODE_CLIENT = UUID.
+        # L'indicateur adverse_repete est calcul directement sur
         # IMMATRICULATION_ADVERSE dans _fraud_business.
 
         return df
 
-    # ─── Injection GPS via géocodeur ──────────────────────────────────────────
+    #  Injection GPS via gocodeur 
 
     def _inject_gps(self, df: pd.DataFrame) -> pd.DataFrame:
         if self._geocoder is None:
-            print("   ⚠️  Géocodeur absent → distances GPS désactivées")
+            print("     Gocodeur absent  distances GPS dsactives")
             return df
 
-        print("   🗺️  Géocodage des adresses via TunisiaGeocoder...")
+        print("     Gocodage des adresses via TunisiaGeocoder...")
 
-        # ── Diagnostic colonnes disponibles ──────────────────────────────
-        print("      Colonnes adresse détectées :")
+        #  Diagnostic colonnes disponibles 
+        print("      Colonnes adresse dtectes :")
         for c in df.columns:
             if any(k in c.lower() for k in ["adresse", "lieu", "residence",
                                              "travail", "sinistre"]):
                 nn = df[c].notna().sum()
-                print(f"      → {c} : {nn}/{len(df)} non-nulles")
-        # ─────────────────────────────────────────────────────────────────
+                print(f"       {c} : {nn}/{len(df)} non-nulles")
+        # 
 
         geo = self._geocoder
 
@@ -493,43 +544,43 @@ class AutoFeatureEngineer:
             if src_col not in df.columns:
                 return
             if lat_col in df.columns and df[lat_col].notna().mean() > 0.5:
-                print(f"      {lat_col} déjà présente → skip")
+                print(f"      {lat_col} dj prsente  skip")
                 return
             lats, lons = geo.geocode_series(df[src_col])
             df[lat_col] = lats.values
             df[lon_col] = lons.values
             n_ok = df[lat_col].notna().sum()
-            print(f"      {src_col} → {n_ok}/{len(df)} géocodés ({n_ok/len(df)*100:.1f}%)")
+            print(f"      {src_col}  {n_ok}/{len(df)} gocods ({n_ok/len(df)*100:.1f}%)")
 
         # Lieu sinistre
         sin_col = _find_col(df, ["adresse_sinistre", "LIEU_SINISTRE"])
         if sin_col:
             _geocode_col(sin_col, "LATITUDE_SINISTRE", "LONGITUDE_SINISTRE")
         else:
-            print("      ⚠️  Colonne lieu sinistre absente → GPS sinistre désactivé")
+            print("        Colonne lieu sinistre absente  GPS sinistre dsactiv")
 
-        # Résidence assurée
+        # Rsidence assure
         res_col = _find_tiers_col(df, "adresse_residence", "residence")
         if res_col:
             _geocode_col(res_col, "tiers_LATITUDE_RESIDENCE", "tiers_LONGITUDE_RESIDENCE")
         else:
-            print("      ⚠️  Colonne résidence absente → GPS résidence désactivé")
+            print("        Colonne rsidence absente  GPS rsidence dsactiv")
 
         # Adresse travail
         trv_col = _find_tiers_col(df, "adresse_travail", "travail", "work")
         if trv_col:
             _geocode_col(trv_col, "tiers_LATITUDE_TRAVAIL", "tiers_LONGITUDE_TRAVAIL")
         else:
-            print("      ⚠️  Colonne travail absente → GPS travail désactivé")
+            print("        Colonne travail absente  GPS travail dsactiv")
 
         stats = geo.stats()
-        print(f"      Stats géocodeur : offline={stats['offline_hits']} "
+        print(f"      Stats gocodeur : offline={stats['offline_hits']} "
               f"cache={stats['cache_hits']} "
               f"no_match={stats['no_match']} "
               f"empty={stats['empty']}")
         return df
 
-    # ─── Features numériques ──────────────────────────────────────────────────
+    #  Features numriques 
 
     def _numeric(self, df):
         fd = {}
@@ -553,7 +604,7 @@ class AutoFeatureEngineer:
                 fd[f"std_{col}"] = ((v - v.mean()) / v.std()).fillna(0).values
         return fd
 
-    # ─── Features catégorielles ───────────────────────────────────────────────
+    #  Features catgorielles 
 
     def _categorical(self, df):
         fd = {}
@@ -569,7 +620,7 @@ class AutoFeatureEngineer:
                 continue
         return fd
 
-    # ─── Features temporelles ─────────────────────────────────────────────────
+    #  Features temporelles 
 
     def _temporal(self, df):
         fd = {}
@@ -587,7 +638,7 @@ class AutoFeatureEngineer:
                         .str.contains(r'\d{2}:\d{2}:\d{2}', regex=True, na=False)
                     )
                     pct_with_time = has_time.mean()
-                    print(f"   ℹ️  DATE_SURVENANCE avec heure : "
+                    print(f"     DATE_SURVENANCE avec heure : "
                           f"{pct_with_time*100:.1f}% des lignes")
 
                     if pct_with_time >= 0.5:
@@ -596,18 +647,18 @@ class AutoFeatureEngineer:
                         nuit_mask = (heure >= 0) & (heure < 5) & valide
                         fd["sinistre_heure_nuit"] = nuit_mask.astype(int).values
                         n_nuit = int(nuit_mask.sum())
-                        print(f"   ✅ sinistre_heure_nuit (00h-04h59) : "
+                        print(f"    sinistre_heure_nuit (00h-04h59) : "
                               f"{n_nuit} ({n_nuit/len(df)*100:.1f}%)")
                         dist = dates[valide].dt.hour.value_counts().sort_index()
-                        print(f"   📊 Distribution heures :")
+                        print(f"    Distribution heures :")
                         for h in range(24):
                             cnt = int(dist.get(h, 0))
                             if cnt > 0:
-                                flag = " ← NUIT" if h < 5 else ""
+                                flag = "  NUIT" if h < 5 else ""
                                 print(f"      {h:02d}h : {cnt:5d}{flag}")
                     else:
-                        print("   ⚠️  DATE_SURVENANCE sans heure → "
-                              "sinistre_heure_nuit désactivé")
+                        print("     DATE_SURVENANCE sans heure  "
+                              "sinistre_heure_nuit dsactiv")
                         fd["sinistre_heure_nuit"] = np.zeros(len(df))
 
                     # WEEKEND
@@ -615,10 +666,10 @@ class AutoFeatureEngineer:
                         dates.dt.dayofweek >= 5
                     ).astype(int).values
                     n_wk = int(fd["sinistre_weekend"].sum())
-                    print(f"   ✅ sinistre_weekend : "
+                    print(f"    sinistre_weekend : "
                           f"{n_wk} ({n_wk/len(df)*100:.1f}%)")
 
-                # ← ICI en dehors du if DATE_SURVENANCE — traite TOUTES les dates
+                #  ICI en dehors du if DATE_SURVENANCE  traite TOUTES les dates
                 fd[f"is_weekend_{col}"] = (
                     dates.dt.dayofweek >= 5
                 ).astype(int).values
@@ -641,7 +692,7 @@ class AutoFeatureEngineer:
                     continue
         return fd
 
-    # ─── Features par groupe ──────────────────────────────────────────────────
+    #  Features par groupe 
 
     def _group(self, df):
         fd = {}
@@ -723,19 +774,19 @@ class AutoFeatureEngineer:
                 fd["zscore_montant"] = np.zeros(len(m))
                 fd["montant_3std_suspect"] = np.zeros(len(m))
 
-            # ── NOUVEAU : ratio vs PRIME contrat ─────────────────────────
+            #  NOUVEAU : ratio vs PRIME contrat 
             prime_col = _find_col(df, ["contrat_PRIME", "PRIME"])
             if prime_col:
                 prime_series = pd.to_numeric(df[prime_col], errors="coerce").fillna(0)
                 prime_mean = prime_series[prime_series > 0].mean()
                 if pd.isna(prime_mean) or prime_mean <= 0:
                     prime_mean = 1.0
-                print(f"   ✅ prime_mean globale : {prime_mean:.1f} TND")
+                print(f"    prime_mean globale : {prime_mean:.1f} TND")
                 prime_indiv = prime_series.clip(lower=1)
                 fd["ratio_montant_prime"] = (m / prime_indiv).values
                 fd["montant_10x_prime"] = (m > prime_mean * 10).astype(int).values
                 n_trigger = fd["montant_10x_prime"].sum()
-                print(f"   ✅ montant_10x_prime (vs moyenne {prime_mean:.0f} TND) : "
+                print(f"    montant_10x_prime (vs moyenne {prime_mean:.0f} TND) : "
                       f"{n_trigger} sinistres ({n_trigger/len(m)*100:.1f}%)")
 
             if "GARAGES" in df.columns:
@@ -754,7 +805,7 @@ class AutoFeatureEngineer:
 
         return fd
 
-    # ─── Features de fréquence ────────────────────────────────────────────────
+    #  Features de frquence 
 
     def _frequency(self, df):
         fd = {}
@@ -773,7 +824,7 @@ class AutoFeatureEngineer:
             fd[f"freq_{col}"] = df[col].map(df[col].value_counts()).fillna(0).values
         return fd
 
-    # ─── Features métier fraude ───────────────────────────────────────────────
+    #  Features mtier fraude 
 
     def _fraud_business(self, df):
         fd = {}
@@ -782,7 +833,7 @@ class AutoFeatureEngineer:
             ["contrat_CODE_CLIENT", "tiers_UUID", "CODE_CLIENT", "REPORTING_AGENCY"],
         )
 
-        # Délais de déclaration
+        # Dlais de dclaration
         if "DATE_SURVENANCE" in df.columns and "DATE_DECLARATION" in df.columns:
             delta = (
                 pd.to_datetime(df["DATE_DECLARATION"], errors="coerce")
@@ -822,14 +873,14 @@ class AutoFeatureEngineer:
                 (j >= 0) & (j < 7)
             ).astype(int).values
 
-        # ── NOUVEAU : avenant dans les 30j avant le sinistre ─────────────
+        #  NOUVEAU : avenant dans les 30j avant le sinistre 
         av_col = _find_col(df, ["contrat_LISTE_AVENANTS", "LISTE_AVENANTS"])
         if av_col is None:
             av_col = _find_col_pattern(df, "liste_avenant", "avenants", "avenant")
 
         if av_col and "DATE_SURVENANCE" in df.columns:
             mots_exclus = [
-                "résiliation", "resiliation", "aliénation",
+                "rsiliation", "resiliation", "alination",
                 "annulation", "resilie",
             ]
 
@@ -865,7 +916,7 @@ class AutoFeatureEngineer:
             fd["nb_avenants_contrat"] = nb_av.values
             fd["contrat_avenants_frequents"] = (nb_av > 2).astype(int).values
 
-            # Avenant récent (< 30j avant le sinistre)
+            # Avenant rcent (< 30j avant le sinistre)
             d_surv = pd.to_datetime(df["DATE_SURVENANCE"], errors="coerce")
             av_recent = pd.Series(0, index=df.index)
             for i, (val, ds) in enumerate(zip(df[av_col].values, d_surv.values)):
@@ -882,8 +933,8 @@ class AutoFeatureEngineer:
                     except Exception:
                         pass
             fd["avenant_proche_sinistre_30j"] = av_recent.values
-            print(f"   ✅ avenant_proche_sinistre_30j : {av_recent.sum()} ({av_recent.mean()*100:.1f}%)")
-            print(f"   ✅ avenants_frequents : {(nb_av>2).mean()*100:.1f}%")
+            print(f"    avenant_proche_sinistre_30j : {av_recent.sum()} ({av_recent.mean()*100:.1f}%)")
+            print(f"    avenants_frequents : {(nb_av>2).mean()*100:.1f}%")
         else:
             fd["nb_avenants_contrat"] = np.zeros(len(df))
             fd["contrat_avenants_frequents"] = np.zeros(len(df))
@@ -915,8 +966,8 @@ class AutoFeatureEngineer:
             fd["client_plus3_sinistres_12m"] = (s12 > 3).astype(int).values
             fd["client_plus7_sinistres_12m"] = (s12 >= 7).astype(int).values
             print(
-                f"   ✅ sinistres_client_12mois "
-                f"| >3: {(s12>3).mean()*100:.1f}% | ≥7: {(s12>=7).mean()*100:.1f}%"
+                f"    sinistres_client_12mois "
+                f"| >3: {(s12>3).mean()*100:.1f}% | 7: {(s12>=7).mean()*100:.1f}%"
             )
 
         # Cluster temporel client
@@ -954,7 +1005,7 @@ class AutoFeatureEngineer:
             ).fillna(999)
             fd["cluster_temporel_client"] = (delai_c <= 30).astype(int).values
 
-        # Cluster temporel véhicule
+        # Cluster temporel vhicule
         if "IMMATRICULATION" in df.columns and "DATE_SURVENANCE" in df.columns:
             def _mdd_veh(grp):
                 g = pd.to_datetime(grp, errors="coerce").dropna().sort_values()
@@ -970,7 +1021,7 @@ class AutoFeatureEngineer:
             )
             fd["cluster_temporel_vehicule"] = (delai_v <= 30).astype(int).values
 
-        # Expert coût anormal
+        # Expert cot anormal
         if "EXPERT_STAREX" in df.columns and "TOTALREGLEMENT" in df.columns:
             m = df["TOTALREGLEMENT"].fillna(0)
             g_mean = m.mean()
@@ -982,7 +1033,7 @@ class AutoFeatureEngineer:
             fd["ratio_cout_expert_global"] = (em / (g_mean + 1)).values
             fd["expert_cout_anormal"] = (em > g_mean * 1.5).astype(int).values
 
-        # Expert + véhicule répétés
+        # Expert + vhicule rpts
         if "EXPERT_STAREX" in df.columns and "IMMATRICULATION" in df.columns:
             combo = (
                 df["EXPERT_STAREX"].fillna("NA").astype(str)
@@ -993,14 +1044,14 @@ class AutoFeatureEngineer:
             fd["freq_expert_meme_vehicule"] = cnt.fillna(0).values
             fd["expert_vehicule_repete"] = (cnt > 1).astype(int).fillna(0).values
 
-        # Adverse répété
+        # Adverse rpt
         if "IMMATRICULATION_ADVERSE" in df.columns:
             adv_valid = df["IMMATRICULATION_ADVERSE"].fillna("NA")
             adv = adv_valid.map(adv_valid.value_counts())
             fd["nbr_sinistres_adverse"] = adv.fillna(0).values
             fd["adverse_repete"] = (adv > 2).astype(int).fillna(0).values
 
-        # Témoin fréquent
+        # Tmoin frquent
         temoin_col = _find_col(df, ["temoin_id", "TEMOIN_ID", "TEMOIN", "temoin"])
         if temoin_col is None:
             temoin_col = _find_col_pattern(df, "temoin")
@@ -1013,7 +1064,7 @@ class AutoFeatureEngineer:
             fd["freq_temoin"] = np.zeros(len(df))
             fd["temoin_frequent"] = np.zeros(len(df))
 
-        # Lieu sinistre fréquent
+        # Lieu sinistre frquent
         lieu_col = _find_col(df, ["adresse_sinistre", "LIEU_SINISTRE", "LIEU"])
         if lieu_col is None:
             lieu_col = _find_col_pattern(df, "adresse_sinistre")
@@ -1026,14 +1077,14 @@ class AutoFeatureEngineer:
             fd["freq_lieu_sinistre"] = np.zeros(len(df))
             fd["lieu_sinistre_frequent"] = np.zeros(len(df))
 
-        # Sinistre proche frontière tunisienne
+        # Sinistre proche frontire tunisienne
         frontiere_keywords = [
-            "frontière", "douane", "poste frontière",
+            "frontire", "douane", "poste frontire",
             "ben gardane", "ras jedir", "dehiba",
             "sakiet sidi youssef", "melloula", "tabarka", "bizerte",
             "jendouba", "kasserine", "gafsa", "tataouine",
             "medenine", "zarzis", "remada", "algerie", "lybie",
-            "libye", "algérie", "ras ajdir", "wazen", "dhahra",
+            "libye", "algrie", "ras ajdir", "wazen", "dhahra",
             "nefza", "ghardimaou", "fernana",
         ]
         lieu_col_front = _find_col(df, ["adresse_sinistre", "LIEU_SINISTRE"])
@@ -1043,13 +1094,13 @@ class AutoFeatureEngineer:
                 lambda x: int(any(kw in x for kw in frontiere_keywords))
             ).values
             print(
-                f"   ✅ sinistre_frontiere : {fd['sinistre_frontiere'].sum()} "
+                f"    sinistre_frontiere : {fd['sinistre_frontiere'].sum()} "
                 f"({fd['sinistre_frontiere'].mean()*100:.1f}%)"
             )
         else:
             fd["sinistre_frontiere"] = np.zeros(len(df))
 
-        # Profession à risque
+        # Profession  risque
         usage_col = _find_col(df, ["contrat_USAGE", "USAGE"])
         job_col = _find_tiers_col(df, "job")
         if job_col is None:
@@ -1083,7 +1134,7 @@ class AutoFeatureEngineer:
             prof_risque = (prof_risque | from_job).astype(int)
         fd["profession_risque"] = prof_risque.values
 
-        # Combo job × marque
+        # Combo job  marque
         marque_col = _find_col(df, ["contrat_MARQUE", "MARQUE"])
         if job_col and marque_col and job_col in df.columns:
             job_clean = df[job_col].fillna("INCONNU").astype(str).str.lower().str.strip()
@@ -1102,7 +1153,7 @@ class AutoFeatureEngineer:
                 )
                 fd["ratio_montant_vs_combo_job_marque"] = (m / (med_combo + 1)).values
 
-        # Âge véhicule + incohérence montant
+        # ge vhicule + incohrence montant
         circ_col = _find_col(
             df, ["contrat_DATE_MISE_EN_CIRCULATION", "DATE_MISE_EN_CIRCULATION"]
         )
@@ -1121,10 +1172,10 @@ class AutoFeatureEngineer:
                     (age > 10) & (m > m.quantile(0.80))
                 ).astype(int).values
 
-        # Déclaration après weekend — SUPPRIMÉ v3.15
+        # Dclaration aprs weekend  SUPPRIM v3.15
         fd["declaration_apres_weekend"] = np.zeros(len(df))
 
-        # Vélocité récente
+        # Vlocit rcente
         if "DATE_SURVENANCE" in df.columns:
             def _vel(grp):
                 g = pd.to_datetime(grp, errors="coerce").dropna()
@@ -1172,13 +1223,13 @@ class AutoFeatureEngineer:
             fd["taux_remplacement_garage"] = taux.values
             fd["garage_taux_remplacement_eleve"] = (taux > 0.8).astype(int).values
 
-        # Sinistre grave sans services — SUPPRIMÉ v3.15
-        # Faux signal lié à des données manquantes, pas à la fraude
+        # Sinistre grave sans services  SUPPRIM v3.15
+        # Faux signal li  des donnes manquantes, pas  la fraude
         fd["nb_services_operationnels"] = np.zeros(len(df))
         fd["sinistre_grave_sans_services"] = np.zeros(len(df))
         return fd
 
-    # ─── Nouveaux indicateurs ─────────────────────────────────────────────────
+    #  Nouveaux indicateurs 
 
     def _new_indicators(self, df):
         fd = {}
@@ -1195,23 +1246,23 @@ class AutoFeatureEngineer:
             fd["note_conducteur_faible"] = (note < 5).astype(int).values
             fd["note_conducteur_tres_faible"] = (note < 3).astype(int).values
             print(
-                f"   ✅ Note conducteur : min={note.min():.1f} max={note.max():.1f}"
+                f"    Note conducteur : min={note.min():.1f} max={note.max():.1f}"
             )
         else:
             fd["note_conducteur"] = np.full(len(df), 5.0)
             fd["note_conducteur_faible"] = np.zeros(len(df))
             fd["note_conducteur_tres_faible"] = np.zeros(len(df))
 
-        # Distances GPS (si coordonnées disponibles après _inject_gps)
+        # Distances GPS (si coordonnes disponibles aprs _inject_gps)
         self._compute_distances(df, fd)
 
         # Distances textuelles (fallback)
         self._compute_text_distances(df, fd)
 
-        # Kilométrage annuel
+        # Kilomtrage annuel
         km_col = _find_col(
             df,
-            ["contrat_Kilométrage", "contrat_KILOMETRAGE", "Kilométrage", "KILOMETRAGE"],
+            ["contrat_Kilomtrage", "contrat_KILOMETRAGE", "Kilomtrage", "KILOMETRAGE"],
         )
         if km_col is None:
             km_col = _find_col_pattern(df, "kilom")
@@ -1228,7 +1279,7 @@ class AutoFeatureEngineer:
             fd["kilometrage_annuel_eleve"] = (km_an > 30000).astype(int).values
             mean_km = km_an.mean()
             fd["kilometrage_vs_moyenne"] = (km_an / (mean_km + 1)).fillna(0).values
-            print(f"   ✅ Kilométrage : moy annuel={km_an.mean():.0f} km/an")
+            print(f"    Kilomtrage : moy annuel={km_an.mean():.0f} km/an")
         else:
             fd["kilometrage_annuel"] = np.zeros(len(df))
             fd["kilometrage_annuel_eleve"] = np.zeros(len(df))
@@ -1254,7 +1305,7 @@ class AutoFeatureEngineer:
             fd["distance_sinistre_residence_identical"] = identical
             if np.all(fd.get("distance_sinistre_residence_elevee", np.zeros(n)) == 0):
                 fd["distance_sinistre_residence_elevee"] = identical
-            print(f"   ✅ sinistre_au_domicile : {identical.sum()}")
+            print(f"    sinistre_au_domicile : {identical.sum()}")
 
         if col_res and col_travail:
             res_s = df[col_res].fillna("").astype(str).str.lower().str.strip()
@@ -1299,7 +1350,7 @@ class AutoFeatureEngineer:
             dist_sr = np.nan_to_num(dist_sr, nan=0.0, posinf=0.0, neginf=0.0)
             fd["distance_sinistre_residence_km"] = dist_sr
             fd["distance_sinistre_residence_elevee"] = (dist_sr > 30).astype(int)
-            print(f"   ✅ GPS sinistre-résidence : max={dist_sr.max():.0f} km")
+            print(f"    GPS sinistre-rsidence : max={dist_sr.max():.0f} km")
 
         if cols["lat_trv"] and cols["lon_trv"]:
             lat_trv = pd.to_numeric(df[cols["lat_trv"]], errors="coerce")
@@ -1311,9 +1362,9 @@ class AutoFeatureEngineer:
             dist_tr = np.nan_to_num(dist_tr, nan=0.0, posinf=0.0, neginf=0.0)
             fd["distance_travail_residence_km"] = dist_tr
             fd["distance_travail_residence_elevee"] = (dist_tr > 40).astype(int)
-            print(f"   ✅ GPS travail-résidence : max={dist_tr.max():.0f} km")
+            print(f"    GPS travail-rsidence : max={dist_tr.max():.0f} km")
 
-    # ─── Alertes déterministes ────────────────────────────────────────────────
+    #  Alertes dterministes 
 
     def compute_deterministic_alerts(self, row, contrat_info=None, prediction=None):
         alerts = []
@@ -1326,14 +1377,14 @@ class AutoFeatureEngineer:
                 if delta > 365:
                     alerts.append({
                         "code": "D1_DECL_ULTRA_TARDIVE",
-                        "label": f"Déclaration {delta} jours après le sinistre",
+                        "label": f"Dclaration {delta} jours aprs le sinistre",
                         "niveau": "critique", "triggered": True,
                     })
                 elif delta > 90:
                     alerts.append({
                         "code": "D1_DECL_TRES_TARDIVE",
-                        "label": f"Déclaration {delta} jours après le sinistre",
-                        "niveau": "élevé", "triggered": True,
+                        "label": f"Dclaration {delta} jours aprs le sinistre",
+                        "niveau": "lev", "triggered": True,
                     })
         except Exception:
             pass
@@ -1345,7 +1396,7 @@ class AutoFeatureEngineer:
                 if 0 <= j < 7:
                     alerts.append({
                         "code": "D2_SINISTRE_IMMEDIAT",
-                        "label": f"Sinistre {j} jours après début de couverture",
+                        "label": f"Sinistre {j} jours aprs dbut de couverture",
                         "niveau": "critique", "triggered": True,
                     })
         except Exception:

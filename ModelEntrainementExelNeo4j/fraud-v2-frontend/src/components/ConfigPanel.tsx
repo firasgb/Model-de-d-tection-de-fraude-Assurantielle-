@@ -30,6 +30,8 @@ const ConfigPanel = ({ onConfigApplied, onDataUploaded, onTrainingStarted, onTra
   const [previewLoading, setPreviewLoading] = useState(false)
   const [reloadLoading, setReloadLoading] = useState(false)
   const [reloadMessage, setReloadMessage] = useState<string | null>(null)
+  const [analystComment, setAnalystComment] = useState<string>('')
+  const [dataUploadedViaInterface, setDataUploadedViaInterface] = useState(false)
 
   // Charger la config actuelle au montage
   useEffect(() => {
@@ -97,10 +99,14 @@ const ConfigPanel = ({ onConfigApplied, onDataUploaded, onTrainingStarted, onTra
   const handleConfigUpdate = async (updates: any) => {
     try {
       setSaveStatus('saving')
+      const payload = {
+        ...updates,
+        ...(analystComment ? { notes: analystComment } : {}),
+      }
       const res = await fetch(`${API_URL}/model/reconfigure`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const errBody = await res.json()
@@ -149,11 +155,13 @@ const ConfigPanel = ({ onConfigApplied, onDataUploaded, onTrainingStarted, onTra
 
   const handleUploadComplete = (result: any) => {
     console.log('Upload terminé:', result)
+    setDataUploadedViaInterface(true)
     if (typeof onDataUploaded === 'function') {
       try { onDataUploaded() } catch (e) { console.warn('onDataUploaded handler error', e) }
     }
-    // Après upload, forcer le rechargement des données côté backend
-    (async () => {
+    // Après upload, forcer le rechargement des données côté backend.
+    // Ne pas lancer automatiquement un nouvel entraînement ou un aperçu de labels.
+    ;(async () => {
       try {
         setReloadLoading(true)
         setReloadMessage(null)
@@ -161,8 +169,6 @@ const ConfigPanel = ({ onConfigApplied, onDataUploaded, onTrainingStarted, onTra
         if (!res.ok) throw new Error(`Erreur ${res.status}`)
         const body = await res.json()
         setReloadMessage(body.message || 'Données rechargées')
-        // actualiser l'aperçu de labels automatiquement
-        try { await fetchLabelsPreview() } catch (e) { /* ignore */ }
       } catch (err: any) {
         setReloadMessage(err?.message || 'Erreur reload')
         setActionError(err?.message || 'Erreur reload')
@@ -183,7 +189,7 @@ const ConfigPanel = ({ onConfigApplied, onDataUploaded, onTrainingStarted, onTra
       const response = await fetch(`${API_URL}/model/train`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ notes: analystComment || undefined }),
       })
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}))
@@ -231,6 +237,18 @@ const ConfigPanel = ({ onConfigApplied, onDataUploaded, onTrainingStarted, onTra
         )}
       </div>
 
+      <div className="bg-white p-4 rounded-lg border mt-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">Commentaire analyste global</label>
+        <textarea
+          value={analystComment}
+          onChange={(e) => setAnalystComment(e.target.value)}
+          placeholder="Ex: ajustement des poids, changement de fichier Excel, ou nouveau seuil à tester"
+          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+          rows={3}
+        />
+        <p className="mt-2 text-xs text-slate-500">Ce commentaire sera envoyé à chaque action de configuration ou ré-entraînement déclenchée depuis ce panneau.</p>
+      </div>
+
       {/* Indicateur de progression d'entraînement */}
       {trainingJobId && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -254,18 +272,24 @@ const ConfigPanel = ({ onConfigApplied, onDataUploaded, onTrainingStarted, onTra
             ></div>
           </div>
           <p className="text-sm text-blue-700">{trainingStatus?.message}</p>
-          {trainingStatus?.label_source && (
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-semibold ${trainingStatus.label_source === 'auto' ? 'bg-orange-100 text-orange-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                {trainingStatus.label_source === 'auto' ? 'Pseudo-supervisé' : 'Supervisé'}
-              </span>
-              <span className="text-slate-600">
-                {trainingStatus.label_source === 'auto'
-                  ? 'Label auto-généré (`is_fraud`) pour l’entraînement pseudo-supervisé.'
-                  : 'Label manuel existant utilisé pour l’entraînement.'}
-              </span>
-            </div>
-          )}
+{trainingStatus?.label_source && (
+             <div className="mt-3 flex flex-wrap gap-2 text-xs">
+               <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-semibold ${
+                 trainingStatus.label_source === 'unsupervised' ? 'bg-slate-100 text-slate-800' :
+                 trainingStatus.label_source === 'auto' ? 'bg-orange-100 text-orange-800' : 'bg-emerald-100 text-emerald-800'
+               }`}>
+                 {trainingStatus.label_source === 'unsupervised' ? 'Non supervisé' :
+                  trainingStatus.label_source === 'auto' ? 'Pseudo-supervisé' : 'Supervisé'}
+               </span>
+               <span className="text-slate-600">
+                 {trainingStatus.label_source === 'unsupervised'
+                   ? 'Entraînement non supervisé - aucun label utilisé.'
+                   : trainingStatus.label_source === 'auto'
+                     ? 'Label auto-généré (`is_fraud`) pour l\'entraînement pseudo-supervisé.'
+                     : 'Label manuel existant utilisé pour l\'entraînement.'}
+               </span>
+             </div>
+           )}
           {trainingStatus?.status === 'completed' && (
             <div className="mt-2 text-sm text-green-700 bg-green-50 p-2 rounded">
               ✓ Nouvelle version du modèle créée et activée. Les statistiques seront mises à jour.
@@ -352,34 +376,71 @@ const ConfigPanel = ({ onConfigApplied, onDataUploaded, onTrainingStarted, onTra
                     Colonnes détectées dans <strong>sinistres</strong> : {labelColumnOptions.slice(0, 10).join(', ')}{labelColumnOptions.length > 10 ? ', ...' : ''}
                   </div>
                 )}
-                  <div className="mt-3 flex items-center gap-2">
-                    <button
-                      onClick={fetchLabelsPreview}
-                      disabled={previewLoading}
-                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded"
-                    >
-                      {previewLoading ? 'Chargement...' : 'Aperçu labels'}
-                    </button>
-                    <span className="text-xs text-slate-500">Vérifie si un label manuel existe ou sera généré</span>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    onClick={fetchLabelsPreview}
+                    disabled={previewLoading}
+                    className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition"
+                  >
+                    {previewLoading ? (
+                      <>
+                        <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <circle cx="12" cy="12" r="10" strokeWidth="3" strokeLinecap="round" strokeDasharray="31.4" strokeDashoffset="10" />
+                        </svg>
+                        Analyse...
+                      </>
+                    ) : (
+                      <>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                        Aperçu labels
+                      </>
+                    )}
+                  </button>
+                  <span className="text-xs text-slate-500 hidden sm:inline">Vérifie si un label manuel existe ou sera généré</span>
+                </div>
+                {!dataUploadedViaInterface && (
+                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+                    ⚠️ Aucune donnée uploadée via cette interface. Les données affichées proviennent de fichiers préchargés sur le serveur.
                   </div>
-                  {labelsPreview && (
-                    <div className="mt-3 p-3 bg-gray-50 border rounded text-xs">
-                      <div><strong>Type de label:</strong> {labelsPreview.label_source === 'auto' ? 'Auto-généré' : 'Manuel'}</div>
-                      <div><strong>Source:</strong> {labelsPreview.label_source}</div>
-                      <div><strong>Colonne:</strong> {labelsPreview.label_column}</div>
-                      <div className="mt-2"><strong>Summary:</strong> {JSON.stringify(labelsPreview.summary)}</div>
-                      <div className="mt-2"><strong>Samples:</strong> <pre className="text-[10px]">{JSON.stringify(labelsPreview.samples)}</pre></div>
-                      {labelsPreview.label_source === 'auto' ? (
-                        <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 p-2 text-orange-800">
-                          ⚠️ Aucun label manuel détecté. Le backend va générer un label `is_fraud` et l’utiliser pour l’entraînement.
-                        </div>
-                      ) : (
-                        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-emerald-800">
-                          ✅ Label manuel détecté. Entraînement supervisé avec ce label.
-                        </div>
-                      )}
+                )}
+                {labelsPreview && (
+                  <div className="mt-3 p-3 bg-gray-50 border rounded text-xs">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${labelsPreview.label_source === 'auto' ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {labelsPreview.label_source === 'auto' ? 'Label auto-généré' : 'Label manuel'}
+                      </span>
+                      <span className="text-slate-600">Colonne: <code className="bg-white px-1 rounded">{labelsPreview.label_column}</code></span>
                     </div>
-                  )}
+                    
+                    {labelsPreview.summary && (
+                      <div className="mb-2">
+                        <div className="text-slate-600 mb-1">Répartition des classes :</div>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(labelsPreview.summary).map(([key, count]) => (
+                            <span key={key} className="px-2 py-0.5 bg-white border rounded text-xs">
+                              {key === '0' ? 'Normal' : key === '1' ? 'Fraude' : 'Suspect'}: <strong>{count as number}</strong>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {labelsPreview.label_source === 'auto' ? (
+                      <div className="mt-2 rounded-lg border border-orange-200 bg-orange-50 p-2 text-orange-800 flex items-start gap-2">
+                        <span className="text-base">⚠️</span>
+                        <span>Aucun label manuel trouvé. Le système va créer un label `is_fraud` basé sur les scores existants.</span>
+                      </div>
+                    ) : (
+                      <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-emerald-800 flex items-start gap-2">
+                        <span className="text-base">✅</span>
+                        <span>Label manuel trouvé. L'entraînement utilisera ce label.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <FileUploadZone
                 onUploadComplete={handleUploadComplete}
@@ -392,6 +453,48 @@ const ConfigPanel = ({ onConfigApplied, onDataUploaded, onTrainingStarted, onTra
                 <div className="mt-3 text-sm text-green-700 bg-green-50 p-2 rounded">{reloadMessage}</div>
               )}
               <div className="mt-6 pt-6 border-t flex justify-end gap-3">
+                <button
+                  onClick={async () => {
+                    const hasLabels = labelsPreview && labelsPreview.label_source === 'manual'
+                    
+                    if (hasLabels) {
+                      const choice = confirm('Données contiennent des labels supervisés.\nOK = Ignorer labels (mode non supervisé)\nAnnuler = Continuer en mode supervisé')
+                      if (!choice) {
+                        trainModel()
+                        return
+                      }
+                    }
+                    
+                    try {
+                      onTrainingStarted?.()
+                      const response = await fetch(`${API_URL}/model/train`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mode: 'unsupervised', notes: analystComment || undefined }),
+                      })
+                      if (!response.ok) throw new Error(`Erreur ${response.status}`)
+                      const data = await response.json()
+                      setTrainingJobId(data.job_id || 'training')
+                      setTrainingProgress(0)
+                      setTrainingStatus({ status: 'running', message: data.message || 'Réentrainement non supervisé...' })
+                    } catch (error: any) {
+                      setActionError(error?.message || 'Erreur')
+                    }
+                  }}
+                  disabled={trainingJobId !== null}
+                  className="px-6 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition"
+                >
+                  {trainingJobId ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Réentrainement...
+                    </>
+                  ) : (
+                    <>
+                      🔄 Réentrainement Non Supervisé
+                    </>
+                  )}
+                </button>
                 <button
                   onClick={trainModel}
                   disabled={trainingJobId !== null}

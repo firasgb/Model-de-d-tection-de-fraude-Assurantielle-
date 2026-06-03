@@ -1,0 +1,19 @@
+# Ignore nested Python virtual environment and caches
+ModelEntrainementExelNeo4j/backend/.venv311/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Ignore dataset and generated Excel files
+ModelEntrainementExelNeo4j/backend/data/
+~$*.xlsx
+
+# Ignore large model binaries
+models/versions/*.pkl
+*.pkl
+
+# Ignore temporary and editor files
+.kilo/
+.git_head*
+.git_diff*

@@ -1,11 +1,11 @@
 """
-neo4j_integration.py  —  Pipeline Neo4j indépendant (ML intégré)
+neo4j_integration.py    Pipeline Neo4j indpendant (ML intgr)
 =================================================================
-- Détecte automatiquement la clé des nœuds Sinistre (NUM_SINISTRE ou num_sinistre)
+- Dtecte automatiquement la cl des nuds Sinistre (NUM_SINISTRE ou num_sinistre)
 - Calcule les indicateurs et le score de fraude pour TOUS les sinistres Neo4j
-- Entraîne un modèle non‑supervisé (IsolationForest / LOF / EllipticEnvelope)
+- Entrane un modle nonsupervis (IsolationForest / LOF / EllipticEnvelope)
 - Pousse les scores dans Neo4j
-- Génère des notifications pour les sinistres suspects / frauduleux
+- Gnre des notifications pour les sinistres suspects / frauduleux
 """
 
 from __future__ import annotations
@@ -18,14 +18,14 @@ import pandas as pd
 from ml.neo4j_fraud_indicators import Neo4jFraudIndicators, Neo4jFraudResult
 from ml.neo4j_fraud_detector import Neo4jFraudDetector
 
-# ─── Seuils ──────────────────────────────────────────────────────────────────
+#  Seuils 
 SEUIL_NORMAL_MAX  = 49.99
 SEUIL_SUSPECT_MIN = 50.0
 SEUIL_FRAUDULEUX  = 70.0
 
 
 def _detect_sinistre_key(driver, database: str) -> str:
-    """Détecte la casse de la propriété utilisée comme clé primaire."""
+    """Dtecte la casse de la proprit utilise comme cl primaire."""
     query = "MATCH (s:Sinistre) RETURN keys(s) AS k LIMIT 1"
     try:
         with driver.session(database=database) as session:
@@ -40,7 +40,7 @@ def _detect_sinistre_key(driver, database: str) -> str:
                     if k.upper() == "NUM_SINISTRE":
                         return k
     except Exception as e:
-        print(f"   ⚠️ _detect_sinistre_key error: {e}")
+        print(f"    _detect_sinistre_key error: {e}")
     return "NUM_SINISTRE"
 
 
@@ -51,7 +51,7 @@ def _find_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     return None
 
 
-# ─── Fonctions de push (redéfinies ici pour accepter sinistre_key) ───────────
+#  Fonctions de push (redfinies ici pour accepter sinistre_key) 
 def push_neo4j_scores_to_nodes(
     driver,
     database: str,
@@ -78,7 +78,7 @@ def push_neo4j_scores_to_nodes(
             f"{i.code}: {i.label} (+{i.points}pts)"
             for i in result.indicateurs
         ]
-        etat = "traité" if statut_final == "normal" else "En cours"
+        etat = "trait" if statut_final == "normal" else "En cours"
         with driver.session(database=database) as session:
             rec = session.run(
                 query,
@@ -93,7 +93,7 @@ def push_neo4j_scores_to_nodes(
             ).single()
             return rec is not None
     except Exception as e:
-        print(f"⚠️ push_neo4j_scores_to_nodes error ({num_sinistre}): {e}")
+        print(f" push_neo4j_scores_to_nodes error ({num_sinistre}): {e}")
         return False
 
 
@@ -114,7 +114,7 @@ def push_community_labels_to_sinistres(
         with driver.session(database=database) as session:
             for comm in communities:
                 comm_id = comm.get("id")
-                niveau  = comm.get("niveau", "modéré")
+                niveau  = comm.get("niveau", "modr")
                 score   = comm.get("score_max", 0)
                 for sin_id in comm.get("sinistres_ids", []):
                     try:
@@ -129,16 +129,16 @@ def push_community_labels_to_sinistres(
                     except Exception:
                         pass
     except Exception as e:
-        print(f"⚠️ push_community_labels error: {e}")
+        print(f" push_community_labels error: {e}")
     return updated
 
 
-# ─── Tag communautés ─────────────────────────────────────────────────────────
+#  Tag communauts 
 def tag_communities(neo4j_loader, community_detector) -> int:
     if community_detector is None or neo4j_loader is None or neo4j_loader.driver is None:
-        print("⚠️ tag_communities: Neo4j non disponible")
+        print(" tag_communities: Neo4j non disponible")
         return 0
-    print("🔍 Tag communautés suspectes sur les nœuds Sinistre...")
+    print(" Tag communauts suspectes sur les nuds Sinistre...")
     try:
         analysis = community_detector.get_full_analysis(force_refresh=True)
         communities = analysis.get("communities", [])
@@ -149,31 +149,31 @@ def tag_communities(neo4j_loader, community_detector) -> int:
             communities,
             sinistre_key=sinistre_key
         )
-        print(f"   ✅ {n_updated} nœuds Sinistre taggés ({len(communities)} communautés)")
+        print(f"    {n_updated} nuds Sinistre taggs ({len(communities)} communauts)")
         return n_updated
     except Exception as e:
-        print(f"   ❌ Erreur tag_communities: {e}")
+        print(f"    Erreur tag_communities: {e}")
         return 0
 
 
-# ─── Calcul des scores Neo4j ─────────────────────────────────────────────────
+#  Calcul des scores Neo4j 
 def compute_all_neo4j_scores(
     sinistres_df: pd.DataFrame,
     neo4j_loader,
     batch_size: int = 50,
 ) -> Dict[str, Neo4jFraudResult]:
     if neo4j_loader is None or neo4j_loader.driver is None:
-        print("⚠️ compute_all_neo4j_scores: Neo4j non disponible")
+        print(" compute_all_neo4j_scores: Neo4j non disponible")
         return {}
 
     driver   = neo4j_loader.driver
     database = neo4j_loader.database
 
-    # Détection de la clé
+    # Dtection de la cl
     sinistre_key = _detect_sinistre_key(driver, database)
-    print(f"   🔑 Clé Sinistre détectée : '{sinistre_key}'")
+    print(f"    Cl Sinistre dtecte : '{sinistre_key}'")
 
-    print("🔍 Récupération des sinistres existants dans Neo4j...")
+    print(" Rcupration des sinistres existants dans Neo4j...")
     try:
         with driver.session(database=database) as session:
             records = session.run(
@@ -181,32 +181,32 @@ def compute_all_neo4j_scores(
             )
             neo4j_nums = {rec["num"] for rec in records if rec["num"]}
     except Exception as e:
-        print(f"   ❌ Impossible de lister les sinistres Neo4j: {e}")
+        print(f"    Impossible de lister les sinistres Neo4j: {e}")
         return {}
 
-    print(f"   ✅ {len(neo4j_nums)} sinistres trouvés dans Neo4j")
+    print(f"    {len(neo4j_nums)} sinistres trouvs dans Neo4j")
 
     if not neo4j_nums:
-        print("   ⚠️ Aucun sinistre dans Neo4j")
+        print("    Aucun sinistre dans Neo4j")
         return {}
 
-    # Vérification optionnelle de l'intersection avec le DataFrame Excel
+    # Vrification optionnelle de l'intersection avec le DataFrame Excel
     col_num = _find_col(sinistres_df, ["NUM_SINISTRE", "num_sinistre"])
     if col_num is not None:
         mask = sinistres_df[col_num].astype(str).isin(neo4j_nums)
         n_commun = mask.sum()
-        print(f"   → {n_commun} sinistres en commun avec Excel (info)")
+        print(f"    {n_commun} sinistres en commun avec Excel (info)")
     else:
-        print("   ⚠️ Colonne NUM_SINISTRE absente du fichier Excel – les pipelines sont indépendants")
+        print("    Colonne NUM_SINISTRE absente du fichier Excel  les pipelines sont indpendants")
 
     # Traiter tous les sinistres Neo4j (pas seulement l'intersection)
     analyzer    = Neo4jFraudIndicators()
     results_map = {}
 
-    print(f"🔬 Calcul indicateurs Neo4j pour {len(neo4j_nums)} sinistres...")
+    print(f" Calcul indicateurs Neo4j pour {len(neo4j_nums)} sinistres...")
     for i, num in enumerate(neo4j_nums):
         if i > 0 and i % batch_size == 0:
-            print(f"   → {i}/{len(neo4j_nums)} ({i/len(neo4j_nums)*100:.0f}%)")
+            print(f"    {i}/{len(neo4j_nums)} ({i/len(neo4j_nums)*100:.0f}%)")
         if not num or str(num) == "nan":
             continue
         try:
@@ -217,14 +217,14 @@ def compute_all_neo4j_scores(
             )
             results_map[str(num)] = result
         except Exception as e:
-            print(f"   ⚠️ Erreur sinistre {num}: {e}")
+            print(f"    Erreur sinistre {num}: {e}")
             continue
 
-    print(f"   ✅ {len(results_map)} scores Neo4j calculés")
+    print(f"    {len(results_map)} scores Neo4j calculs")
     return results_map
 
 
-# ─── Pipeline complet (indépendant) ──────────────────────────────────────────
+#  Pipeline complet (indpendant) 
 def run_neo4j_pipeline(
     fraud_detector,
     sinistres_df: pd.DataFrame,
@@ -243,14 +243,14 @@ def run_neo4j_pipeline(
     }
 
     if neo4j_loader is None or neo4j_loader.driver is None:
-        print("⚠️ run_neo4j_pipeline: Neo4j non disponible – pipeline ignoré")
+        print(" run_neo4j_pipeline: Neo4j non disponible  pipeline ignor")
         return stats
 
-    print("\n" + "═" * 60)
-    print("🚀 PIPELINE NEO4J — Démarrage (indépendant, données 100% Neo4j)")
-    print("═" * 60)
+    print("\n" + "" * 60)
+    print(" PIPELINE NEO4J  Dmarrage (indpendant, donnes 100% Neo4j)")
+    print("" * 60)
 
-    # 1. Tag communautés
+    # 1. Tag communauts
     stats["communities_tagged"] = tag_communities(neo4j_loader, community_detector)
 
     # 2. Extraire les indicateurs Neo4j
@@ -258,19 +258,19 @@ def run_neo4j_pipeline(
     stats["neo4j_scores_computed"] = len(neo4j_results)
 
     if not neo4j_results:
-        print("⚠️ Aucun sinistre Neo4j à traiter, pas de modèle ML entraîné.")
+        print(" Aucun sinistre Neo4j  traiter, pas de modle ML entran.")
         return stats
 
-    # 3. Entraîner le détecteur ML Neo4j
-    print("🧠 Entraînement du modèle ML Neo4j...")
+    # 3. Entraner le dtecteur ML Neo4j
+    print(" Entranement du modle ML Neo4j...")
     neo4j_detector = Neo4jFraudDetector()
     neo4j_detector.fit(neo4j_results)
     fraud_detector._neo4j_detector = neo4j_detector
     fraud_detector._neo4j_results = neo4j_results
 
-    # 4. Pousser les scores dans Neo4j (avec la clé détectée)
+    # 4. Pousser les scores dans Neo4j (avec la cl dtecte)
     sinistre_key = _detect_sinistre_key(neo4j_loader.driver, neo4j_loader.database)
-    print(f"📤 Push scores Neo4j (clé = '{sinistre_key}')...")
+    print(f" Push scores Neo4j (cl = '{sinistre_key}')...")
     updated = 0
     for num, result in neo4j_results.items():
         pred = neo4j_detector.predict(num)
@@ -293,8 +293,8 @@ def run_neo4j_pipeline(
                 stats["normaux"] += 1
     stats["nodes_updated"] = updated
 
-    # 5. Générer les notifications
-    print("🔔 Génération des notifications (Neo4j uniquement)...")
+    # 5. Gnrer les notifications
+    print(" Gnration des notifications (Neo4j uniquement)...")
     notifications_queued = 0
     for num, result in neo4j_results.items():
         pred = neo4j_detector.predict(num)
@@ -318,24 +318,24 @@ def run_neo4j_pipeline(
                 notifications_queued += 1
     stats["notifications_queued"] = notifications_queued
 
-    # ── Logs récapitulatifs ──────────────────────────────────────────────────
+    #  Logs rcapitulatifs 
     n = stats["neo4j_scores_computed"]
-    print("═" * 60)
-    print("✅ PIPELINE NEO4J TERMINÉ")
-    print(f"   Communautés taggées  : {stats['communities_tagged']}")
-    print(f"   Scores Neo4j calculés: {n}")
-    print(f"   Nœuds mis à jour     : {stats['nodes_updated']}")
+    print("" * 60)
+    print(" PIPELINE NEO4J TERMIN")
+    print(f"   Communauts tagges  : {stats['communities_tagged']}")
+    print(f"   Scores Neo4j calculs: {n}")
+    print(f"   Nuds mis  jour     : {stats['nodes_updated']}")
     print(f"   Notifications        : {stats['notifications_queued']}")
     if n > 0:
         print(f"   Frauduleux Neo4j     : {stats['frauduleux']} ({stats['frauduleux']/n*100:.1f}%)")
         print(f"   Suspects Neo4j       : {stats['suspects']} ({stats['suspects']/n*100:.1f}%)")
         print(f"   Normaux Neo4j        : {stats['normaux']} ({stats['normaux']/n*100:.1f}%)")
-    print("═" * 60 + "\n")
+    print("" * 60 + "\n")
 
     return stats
 
 
-# ─── Helpers email et notification ───────────────────────────────────────────
+#  Helpers email et notification 
 def _fetch_email_for_sinistre(driver, database: str, num_sinistre: str,
                               sinistre_key: str = "NUM_SINISTRE") -> Optional[str]:
     query = f"""
@@ -348,7 +348,7 @@ def _fetch_email_for_sinistre(driver, database: str, num_sinistre: str,
             rec = session.run(query, num=num_sinistre).single()
             return rec["email"] if rec and rec["email"] else None
     except Exception as e:
-        print(f"⚠️ _fetch_email_for_sinistre error: {e}")
+        print(f" _fetch_email_for_sinistre error: {e}")
         return None
 
 
@@ -357,20 +357,20 @@ def _build_neo4j_notification(num_sinistre: str, score: float, statut: str,
     TYPE_MAP = {
         "frauduleux": {
             "type": "sinistre_fraude",
-            "title": f"🚨 Fraude détectée — Sinistre N°{num_sinistre}",
-            "message": f"Sinistre N°{num_sinistre} signalé frauduleux. Score : {score:.0f}/100. Traitement suspendu.",
+            "title": f" Fraude dtecte  Sinistre N{num_sinistre}",
+            "message": f"Sinistre N{num_sinistre} signal frauduleux. Score : {score:.0f}/100. Traitement suspendu.",
             "priority": "high",
         },
         "suspect": {
             "type": "sinistre_suspect",
-            "title": f"⚠️ Sinistre suspect — N°{num_sinistre}",
-            "message": f"Sinistre N°{num_sinistre} nécessite vérification. Score : {score:.0f}/100. Un expert vous contactera.",
+            "title": f" Sinistre suspect  N{num_sinistre}",
+            "message": f"Sinistre N{num_sinistre} ncessite vrification. Score : {score:.0f}/100. Un expert vous contactera.",
             "priority": "medium",
         },
         "normal": {
             "type": "sinistre_normal",
-            "title": f"✅ Sinistre N°{num_sinistre} — En cours de traitement",
-            "message": f"Sinistre N°{num_sinistre} enregistré. Score : {score:.0f}/100. Aucune anomalie.",
+            "title": f" Sinistre N{num_sinistre}  En cours de traitement",
+            "message": f"Sinistre N{num_sinistre} enregistr. Score : {score:.0f}/100. Aucune anomalie.",
             "priority": "low",
         },
     }
@@ -385,7 +385,7 @@ def _build_neo4j_notification(num_sinistre: str, score: float, statut: str,
         "score_suspicion": round(score, 1),
         "statut_sinistre": statut,
         "indicateurs": [
-            {"code": i["code"], "label": i["label"], "points": i["pts"], "niveau": i.get("niveau", "élevé")}
+            {"code": i["code"], "label": i["label"], "points": i["pts"], "niveau": i.get("niveau", "lev")}
             for i in indicateurs[:10]
         ],
         "nb_indicateurs": len(indicateurs),

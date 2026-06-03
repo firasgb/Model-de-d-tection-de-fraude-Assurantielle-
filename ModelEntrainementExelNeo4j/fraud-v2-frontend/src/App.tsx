@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import ModelVersions from './components/ModelVersions'
 import ConfigPanel from './components/ConfigPanel'
+import SupervisedTestZone from './components/SupervisedTestZone'
 
 const Icon = ({ d, size = 18, className = '' }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -1106,15 +1107,16 @@ export default function App() {
         <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', padding: '8px 6px 4px', letterSpacing: '.08em' }}>ANALYSE ML</div>
         <NavItem icon={<Icon d={Icons.chart} size={16} />} label="Tableau de bord" active={tab === 'dashboard'} onClick={() => setTab('dashboard')} count={undefined} badge={undefined} />
         <NavItem icon={<Icon d={Icons.flame} size={16} />} label="Fraudes & Suspects" count={(fraudsExactCount?.total ?? frauds.length) || undefined} active={tab === 'fraudes'} onClick={() => { setTab('fraudes'); if (!frauds.length && !loadingFrauds) loadFrauds().catch(() => { }) } } badge={undefined} />
-        <NavItem icon={<Icon d={Icons.brain} size={16} />} label="Versions Modèle" active={tab === 'versions'} onClick={() => setTab('versions')} count={undefined} badge={undefined} />
+<NavItem icon={<Icon d={Icons.brain} size={16} />} label="Versions Modèle" active={tab === 'versions'} onClick={() => setTab('versions')} count={undefined} badge={undefined} />
+        <NavItem icon={<Icon d={Icons.activity} size={16} />} label="Test Supervisé" active={tab === 'supervised-test'} onClick={() => setTab('supervised-test')} count={undefined} badge={undefined} />
         <NavItem icon={<Icon d={Icons.line} size={16} />} label="Évolution annuelle" active={tab === 'evolution'} onClick={() => setTab('evolution')} count={undefined} badge={undefined} />
         <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', padding: '12px 6px 4px', letterSpacing: '.08em' }}>GRAPHE NEO4J</div>
         <NavItem icon={<Icon d={Icons.network} size={16} />} label="Réseaux suspects" active={tab === 'communities'} badge={commData ? (commData.stats.nb_communautes > 0 ? commData.stats.nb_communautes : undefined) : undefined} onClick={() => { setTab('communities'); if (!commData) loadCommunities() } } count={undefined} />
-         <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', padding: '12px 6px 4px', letterSpacing: '.08em' }}>DONNÉES</div>
-         <NavItem icon={<Icon d={Icons.search} size={16} />} label="Recherche" active={tab === 'recherche'} onClick={() => setTab('recherche')} count={undefined} badge={undefined} />
-         <NavItem icon={<Icon d={Icons.file} size={16} />} label="Tous les sinistres" count={displayTotal || undefined} active={tab === 'sinistres'} onClick={() => setTab('sinistres')} badge={undefined} />
-         <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', padding: '12px 6px 4px', letterSpacing: '.08em' }}>PARAMÈTRES</div>
-         <NavItem icon={<Icon d={Icons.wrench} size={16} />} label="Configuration" active={tab === 'config'} onClick={() => setTab('config')} count={undefined} badge={undefined} />
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', padding: '12px 6px 4px', letterSpacing: '.08em' }}>DONNÉES</div>
+        <NavItem icon={<Icon d={Icons.search} size={16} />} label="Recherche" active={tab === 'recherche'} onClick={() => setTab('recherche')} count={undefined} badge={undefined} />
+        <NavItem icon={<Icon d={Icons.file} size={16} />} label="Tous les sinistres" count={displayTotal || undefined} active={tab === 'sinistres'} onClick={() => setTab('sinistres')} badge={undefined} />
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', padding: '12px 6px 4px', letterSpacing: '.08em' }}>PARAMÈTRES</div>
+        <NavItem icon={<Icon d={Icons.wrench} size={16} />} label="Configuration" active={tab === 'config'} onClick={() => setTab('config')} count={undefined} badge={undefined} />
        </nav>
       <div style={{ padding: '12px 10px', borderBottom: '1px solid #F3F4F6' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: neo4jStatus === 'ok' ? '#ECFDF5' : '#FEF2F2', borderRadius: 8, marginBottom: 8 }}>
@@ -1179,22 +1181,22 @@ export default function App() {
           </button>
         </div>
       )}
-      {trainingMessage && (
-        <div style={{ marginBottom: 18, padding: '12px 16px', borderRadius: 12, background: '#F8FAFC', color: '#111827', border: '1px solid #E5E7EB' }}>
-          <div>{trainingMessage}</div>
-          {trainingLabelSource && (
-            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 12, color: trainingLabelSource === 'auto' ? '#92400E' : '#065F46' }}>
-              <strong>Type d'entraînement :</strong> {trainingLabelSource === 'auto' ? 'Pseudo-supervisé (label généré automatiquement)' : 'Supervisé (label manuel)'}
+{trainingMessage && (
+         <div style={{ marginBottom: 18, padding: '12px 16px', borderRadius: 12, background: '#F8FAFC', color: '#111827', border: '1px solid #E5E7EB' }}>
+           <div>{trainingMessage}</div>
+           {trainingLabelSource && (
+            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 12, color: trainingLabelSource === 'auto' ? '#92400E' : trainingLabelSource === 'unsupervised' ? '#475569' : '#065F46' }}>
+              <strong>Type d'entraînement :</strong> {trainingLabelSource === 'unsupervised' ? 'Non supervisé' : trainingLabelSource === 'auto' ? 'Pseudo-supervisé (label généré automatiquement)' : 'Supervisé (label manuel)'}
               {trainingLabelColumn ? <span>· Colonne : {trainingLabelColumn}</span> : null}
             </div>
           )}
           {trainingLabelSource === 'auto' && (
-            <div style={{ marginTop: 8, fontSize: 12, color: '#92400E' }}>
-              ⚠️ Si aucun label manuel n'est détecté, le backend va générer une colonne `is_fraud` pour l'entraînement. Il s'agit d'un entraînement pseudo-supervisé, pas d'un mode non supervisé.
-            </div>
-          )}
-        </div>
-      )}
+             <div style={{ marginTop: 8, fontSize: 12, color: '#92400E' }}>
+               ⚠️ Si aucun label manuel n'est détecté, le backend va générer une colonne `is_fraud` pour l'entraînement. Il s'agit d'un entraînement pseudo-supervisé, pas d'un mode non supervisé.
+             </div>
+           )}
+         </div>
+       )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 14, marginBottom: 24 }}>
         <KPI icon={<Icon d={Icons.database} size={18} />} label="Total sinistres"  value={fmt(displayTotal)}                                     accent="slate"  />
         <KPI icon={<Icon d={Icons.activity} size={18} />} label="Score moyen"      value={stats.score_moyen.toFixed(1)}   sub="/100"               accent="blue"   />
@@ -1848,6 +1850,17 @@ export default function App() {
     )
   })()
 
+// ─── TEST SUPERVISE ───────────────────────────────────────────────────────────
+  const supervisedTestContent = (
+    <div>
+      {pageHeader(
+        'Test Mode Supervisé',
+        'Uploader des données non labellisées pour tester le modèle XGBoost entraîné'
+      )}
+      <SupervisedTestZone />
+    </div>
+  )
+
   const content = {
     dashboard:   dashboardContent,
     fraudes:     fraudsContent,
@@ -1856,15 +1869,16 @@ export default function App() {
     evolution:   evolutionContent,
     recherche:   rechercheContent,
     sinistres:   sinistresContent,
-     config:      <ConfigPanel
-        onConfigApplied={refreshStats}
-        onDataUploaded={refreshDataAfterUpload}
-        onTrainingStarted={() => setTrainingInProgress(true)}
-        onTrainingEnded={() => setTrainingInProgress(false)}
-        labelColumn={labelColumn}
-        onLabelColumnChange={setLabelColumn}
-        labelColumnOptions={labelColumnOptions}
-      />,
+    config:      <ConfigPanel
+      onConfigApplied={refreshStats}
+      onDataUploaded={refreshDataAfterUpload}
+      onTrainingStarted={() => setTrainingInProgress(true)}
+      onTrainingEnded={() => setTrainingInProgress(false)}
+      labelColumn={labelColumn}
+      onLabelColumnChange={setLabelColumn}
+      labelColumnOptions={labelColumnOptions}
+    />,
+    'supervised-test': supervisedTestContent,
     detail:      detailContent,
   }
 

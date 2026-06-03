@@ -1,8 +1,8 @@
 """
-scoring_config.py — Configuration Dynamique du Scoring v1.0
+scoring_config.py  Configuration Dynamique du Scoring v1.0
 ============================================================
-Gère les poids des groupes, poids des indicateurs individuels et seuils de classification.
-Permet de re-scorer tous les sinistres sans ré-entraîner les modèles ML.
+Gre les poids des groupes, poids des indicateurs individuels et seuils de classification.
+Permet de re-scorer tous les sinistres sans r-entraner les modles ML.
 
 Architecture:
 - ScoringConfig: dataclass avec validation
@@ -19,9 +19,9 @@ from datetime import datetime
 
 @dataclass
 class ScoringConfig:
-    """Configuration complète du système de scoring."""
+    """Configuration complte du systme de scoring."""
 
-    # ── Poids par groupe (somme = 100) ────────────────────────────────────────
+    #  Poids par groupe (somme = 100) 
     group_weights: Dict[str, int] = field(
         default_factory=lambda: {
             "financial": 35,
@@ -33,11 +33,11 @@ class ScoringConfig:
         }
     )
 
-    # ── Poids par indicateur individuel (optionnel, override groupe) ──────────
-    # Si non spécifié, utilise les poids par défaut de l'indicateur
+    #  Poids par indicateur individuel (optionnel, override groupe) 
+    # Si non spcifi, utilise les poids par dfaut de l'indicateur
     indicator_weights: Optional[Dict[str, float]] = field(default_factory=dict)
 
-    # ── Seuils de classification ─────────────────────────────────────────────
+    #  Seuils de classification 
     thresholds: Dict[str, float] = field(
         default_factory=lambda: {
             "normal_max": 49.99,
@@ -46,14 +46,14 @@ class ScoringConfig:
         }
     )
 
-    # ── Métadonnées ───────────────────────────────────────────────────────────
+    #  Mtadonnes 
     version: str = "1.0"
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     notes: str = ""
 
 
 class ScoringConfigManager:
-    """Gère le cycle de vie des configurations de scoring."""
+    """Gre le cycle de vie des configurations de scoring."""
 
     def __init__(self, config_dir: str = "models/versions"):
         self.config_dir = config_dir
@@ -63,17 +63,17 @@ class ScoringConfigManager:
         self._current_config: Optional[ScoringConfig] = None
         self._history: list = []
 
-        # Charger la config actuelle ou créer la défaut
+        # Charger la config actuelle ou crer la dfaut
         self._load_or_create_default()
 
     @property
     def current(self) -> ScoringConfig:
-        """Retourne la configuration actuelle en rechargeant le fichier si nécessaire."""
+        """Retourne la configuration actuelle en rechargeant le fichier si ncessaire."""
         self._load_or_create_default()
         return self._current_config
 
     def _load_or_create_default(self):
-        """Charge la config depuis le fichier ou crée la défaut."""
+        """Charge la config depuis le fichier ou cre la dfaut."""
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r') as f:
@@ -87,7 +87,7 @@ class ScoringConfigManager:
             self._create_default()
 
     def _create_default(self):
-        """Crée et sauvegarde la configuration par défaut."""
+        """Cre et sauvegarde la configuration par dfaut."""
         self._current_config = ScoringConfig()
         self.save()
         print(f"[OK] Configuration par defaut creee: {self.config_file}")
@@ -99,19 +99,19 @@ class ScoringConfigManager:
                 json.dump(asdict(self._current_config), f, indent=2)
             return True
         except Exception as e:
-            print(f"❌ Erreur sauvegarde config: {e}")
+            print(f" Erreur sauvegarde config: {e}")
             return False
 
     def update(self, new_config: Dict[str, any], notes: str = "") -> bool:
         """
-        Met à jour la configuration et persiste.
+        Met  jour la configuration et persiste.
 
         Args:
             new_config: Dictionnaire partiel ou complet de la nouvelle configuration
             notes: Notes de version pour l'historique
 
         Returns:
-            bool: True si succès
+            bool: True si succs
         """
         # Fusion avec config existante
         current = self.current
@@ -125,7 +125,7 @@ class ScoringConfigManager:
             else:
                 current_dict[key] = value
 
-        # Créer nouvelle instance avec données fusionnées
+        # Crer nouvelle instance avec donnes fusionnes
         self._current_config = ScoringConfig(**current_dict)
         self._current_config.notes = notes
         self._current_config.created_at = datetime.now().isoformat()
@@ -135,14 +135,14 @@ class ScoringConfigManager:
         if not self.save():
             return False
 
-        # Ajouter à l'historique
+        # Ajouter  l'historique
         self._add_to_history(asdict(self._current_config))
 
-        print(f"Configuration mise à jour: v{self._current_config.version}")
+        print(f"Configuration mise  jour: v{self._current_config.version}")
         return True
 
     def _next_version(self) -> str:
-        """Incrémente le numéro de version."""
+        """Incrmente le numro de version."""
         try:
             with open(self.config_file, 'r') as f:
                 current = json.load(f)
@@ -153,7 +153,7 @@ class ScoringConfigManager:
             return "1.1"
 
     def _add_to_history(self, config_dict: dict):
-        """Ajoute la config à l'historique (garde les 10 dernières)."""
+        """Ajoute la config  l'historique (garde les 10 dernires)."""
         try:
             if os.path.exists(self.history_file):
                 with open(self.history_file, 'r') as f:
@@ -166,13 +166,13 @@ class ScoringConfigManager:
                 "config": config_dict
             })
 
-            # Garder seulement les 10 dernières
+            # Garder seulement les 10 dernires
             history = history[-10:]
 
             with open(self.history_file, 'w') as f:
                 json.dump(history, f, indent=2)
         except Exception as e:
-            print(f"⚠️ Erreur historique config: {e}")
+            print(f" Erreur historique config: {e}")
 
     def get_history(self, limit: int = 10) -> list:
         """Retourne l'historique des configurations."""
@@ -187,20 +187,20 @@ class ScoringConfigManager:
 
     def rollback(self, version: str) -> bool:
         """
-        Restaure une configuration précédente.
+        Restaure une configuration prcdente.
 
         Args:
-            version: Numéro de version à restaurer (ex: "1.2")
+            version: Numro de version  restaurer (ex: "1.2")
 
         Returns:
-            bool: True si succès
+            bool: True si succs
         """
         history = self.get_history(limit=50)
         for entry in history:
             if entry["config"].get("version") == version:
                 self._current_config = ScoringConfig(**entry["config"])
                 self.save()
-                print(f"✅ Rollback vers v{version} effectué")
+                print(f" Rollback vers v{version} effectu")
                 return True
         return False
 
@@ -219,7 +219,7 @@ class ScoringConfigManager:
         if total != 100:
             errors.append(f"Somme des poids groupes doit = 100 (actuel: {total})")
 
-        # 2. Chaque groupe ≤ max autorisé
+        # 2. Chaque groupe  max autoris
         MAX_GROUP = {
             "financial": 35,
             "temporal": 35,
@@ -233,12 +233,12 @@ class ScoringConfigManager:
                 if config.group_weights[group] > max_val:
                     errors.append(f"Groupe '{group}': {config.group_weights[group]} > max {max_val}")
 
-        # 3. Seuils cohérents
+        # 3. Seuils cohrents
         if config.thresholds.get("normal_max", 0) >= config.thresholds.get("suspect_min", 100):
-            errors.append("normal_max doit être < suspect_min")
+            errors.append("normal_max doit tre < suspect_min")
 
         if config.thresholds.get("suspect_min", 0) >= config.thresholds.get("frauduleux", 100):
-            errors.append("suspect_min doit être < frauduleux")
+            errors.append("suspect_min doit tre < frauduleux")
 
         # 4. Poids indicateurs entre 0 et 100
         for ind, weight in config.indicator_weights.items():
@@ -256,7 +256,7 @@ class ScoringConfigManager:
         return asdict(self.current)
 
 
-# ─── Singleton global ─────────────────────────────────────────────────────────
+#  Singleton global 
 
 _config_manager: Optional[ScoringConfigManager] = None
 
@@ -267,3 +267,4 @@ def get_config_manager() -> ScoringConfigManager:
     if _config_manager is None:
         _config_manager = ScoringConfigManager()
     return _config_manager
+

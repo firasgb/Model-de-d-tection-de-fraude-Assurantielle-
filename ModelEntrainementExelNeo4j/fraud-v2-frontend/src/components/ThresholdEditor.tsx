@@ -55,6 +55,8 @@ const ThresholdEditor = ({ initialThresholds, onSave, onError }: ThresholdEditor
   const handleChange = (field: keyof Thresholds, value: number) => {
     setThresholds(prev => ({ ...prev, [field]: value }))
     setIsDirty(true)
+    // Validation en temps réel pour feedback immédiat
+    setTimeout(() => validate(), 0)
   }
 
   const handleSave = () => {
@@ -64,12 +66,20 @@ const ThresholdEditor = ({ initialThresholds, onSave, onError }: ThresholdEditor
     }
   }
 
+  const errorForField = (field: keyof Thresholds): boolean => {
+    const t = thresholds
+    if (field === 'normal_max' && t.normal_max >= t.suspect_min) return true
+    if (field === 'suspect_min' && (t.suspect_min <= t.normal_max || t.suspect_min >= t.frauduleux)) return true
+    if (field === 'frauduleux' && t.frauduleux <= t.suspect_min) return true
+    return false
+  }
+
   return (
     <div className="space-y-6 p-4 border rounded-lg bg-white">
       <h3 className="text-lg font-semibold text-gray-800 mb-4">Seuils de Classification</h3>
 
       {/* Normal / Suspect */}
-      <div>
+      <div className={errorForField('normal_max') ? 'ring-2 ring-red-300 rounded-lg p-2' : ''}>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Normal max (score {'<'} suspect_min): <span className="font-mono text-blue-600">{thresholds.normal_max.toFixed(2)}</span>
         </label>
@@ -80,7 +90,7 @@ const ThresholdEditor = ({ initialThresholds, onSave, onError }: ThresholdEditor
           step="0.01"
           value={thresholds.normal_max}
           onChange={(e) => handleChange('normal_max', parseFloat(e.target.value))}
-          className="w-full h-2 bg-blue-200 rounded-lg appearance-none cursor-pointer"
+          className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${errorForField('normal_max') ? 'bg-red-200' : 'bg-blue-200'}`}
         />
         <div className="flex justify-between text-xs text-gray-500 mt-1">
           <span>0</span>
@@ -89,7 +99,7 @@ const ThresholdEditor = ({ initialThresholds, onSave, onError }: ThresholdEditor
       </div>
 
       {/* Suspect min */}
-      <div>
+      <div className={errorForField('suspect_min') ? 'ring-2 ring-red-300 rounded-lg p-2' : ''}>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Suspect min (score ≥): <span className="font-mono text-orange-600">{thresholds.suspect_min.toFixed(2)}</span>
         </label>
@@ -100,7 +110,7 @@ const ThresholdEditor = ({ initialThresholds, onSave, onError }: ThresholdEditor
           step="0.01"
           value={thresholds.suspect_min}
           onChange={(e) => handleChange('suspect_min', parseFloat(e.target.value))}
-          className="w-full h-2 bg-orange-200 rounded-lg appearance-none cursor-pointer"
+          className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${errorForField('suspect_min') ? 'bg-red-200' : 'bg-orange-200'}`}
         />
         <div className="flex justify-between text-xs text-gray-500 mt-1">
           <span>50</span>
@@ -109,7 +119,7 @@ const ThresholdEditor = ({ initialThresholds, onSave, onError }: ThresholdEditor
       </div>
 
       {/* Frauduleux */}
-      <div>
+      <div className={errorForField('frauduleux') ? 'ring-2 ring-red-300 rounded-lg p-2' : ''}>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           {"Fraude (score >): "}
           <span className="font-mono text-red-600">{thresholds.frauduleux.toFixed(2)}</span>
@@ -121,7 +131,7 @@ const ThresholdEditor = ({ initialThresholds, onSave, onError }: ThresholdEditor
           step="0.1"
           value={thresholds.frauduleux}
           onChange={(e) => handleChange('frauduleux', parseFloat(e.target.value))}
-          className="w-full h-2 bg-red-200 rounded-lg appearance-none cursor-pointer"
+          className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${errorForField('frauduleux') ? 'bg-red-400' : 'bg-red-200'}`}
         />
         <div className="flex justify-between text-xs text-gray-500 mt-1">
           <span>70</span>

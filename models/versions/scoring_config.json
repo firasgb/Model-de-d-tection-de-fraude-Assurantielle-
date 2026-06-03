@@ -1,0 +1,19 @@
+{
+  "group_weights": {
+    "financial": 35,
+    "temporal": 28,
+    "frequency": 20,
+    "network": 10,
+    "driver": 6,
+    "profile": 1
+  },
+  "indicator_weights": {},
+  "thresholds": {
+    "normal_max": 49.99,
+    "suspect_min": 50.0,
+    "frauduleux": 70.0
+  },
+  "version": "1.0",
+  "created_at": "2026-05-22T08:01:25.543105",
+  "notes": ""
+}

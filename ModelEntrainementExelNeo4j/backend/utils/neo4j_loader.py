@@ -31,17 +31,22 @@ class PFE2026Neo4jLoader:
                 connection_acquisition_timeout=60
             )
             # Tester la connexion
-            with self.driver.session(database=self.database) as session:
+            with self.driver.session() as session:
                 result = session.run("RETURN 1 as test")
                 result.single()
-            print(f"✅ Neo4j AuraDB connecté: {self.uri}")
+            print(f"✅ Neo4j connecté: {self.uri}")
+            if "localhost" in self.uri or "127.0.0.1" in self.uri:
+                print("   Type: BASE LOCALE")
+            elif "neo4j.io" in self.uri or "neo4j+s://" in self.uri:
+                print("   Type: AURADB (hébergée)")
+            print(f"   Database: {self.database}")
         except Exception as e:
             print(f"❌ Erreur connexion Neo4j: {e}")
             self.driver = None
-    
+     
     def get_session(self) -> Optional[Session]:
         if self.driver:
-            return self.driver.session(database=self.database)
+            return self.driver.session()
         return None
     
     def close(self):

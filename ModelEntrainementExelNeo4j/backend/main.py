@@ -1,16 +1,20 @@
 """
 main.py --- API unifiee de detection de fraude (v3.14)
-✅ Demarrage automatique Excel + Neo4j (ML integre)
-✅ Toutes les routes pour le dashboard AIMLDashboard.jsx
-✅ Gestion des notifications via sinistre_router
-✅ v3.14 : poids recalibres, geocoder TunisiaGeocoder integre
-✅ v3.14 : nouveaux triggers (heure nuit, weekend, avenant recent, ratio prime)
-✅ v3.14 : SCORE_GROUPS_MAX mis a jour (temporal 35, frequency 30, network 22)
-✅ CORRECTION : pipeline Neo4j supprime --> scoring sinistre par sinistre (sinistre_router)
+ Demarrage automatique Excel + Neo4j (ML integre)
+ Toutes les routes pour le dashboard AIMLDashboard.jsx
+ Gestion des notifications via sinistre_router
+ v3.14 : poids recalibres, geocoder TunisiaGeocoder integre
+ v3.14 : nouveaux triggers (heure nuit, weekend, avenant recent, ratio prime)
+ v3.14 : SCORE_GROUPS_MAX mis a jour (temporal 35, frequency 30, network 22)
+ CORRECTION : pipeline Neo4j supprime --> scoring sinistre par sinistre (sinistre_router)
 """
+
 
 import sys
 import os
+
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 from hashlib import md5
 from io import BytesIO
 from datetime import datetime
@@ -41,15 +45,15 @@ try:
     NEO4J_AVAILABLE = True
 except ImportError:
     NEO4J_AVAILABLE = False
-    print("⚠️ Neo4j non disponible")
+    print(" Neo4j non disponible")
 
-# ── Geocodeur Tunisia (optionnel) ─────────────────────────────────────────────
+#  Geocodeur Tunisia (optionnel) 
 try:
     from ml.geo_utils import TunisiaGeocoder
     GEO_AVAILABLE = True
 except ImportError:
     GEO_AVAILABLE = False
-    print("⚠️ TunisiaGeocoder non disponible")
+    print(" TunisiaGeocoder non disponible")
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -79,7 +83,7 @@ app.add_middleware(
 
 app.include_router(sinistre_router, prefix="/sinistres", tags=["sinistres"])
 
-# ─── Variables globales ───────────────────────────────────────────────────────
+#  Variables globales 
 fraud_detector: Optional[AutoFraudDetector] = None
 data_loader = DataLoader()
 sinistres_df = None
@@ -95,7 +99,7 @@ SEUIL_SUSPECT_MIN = 50.0
 SEUIL_FRAUDULEUX  = 70.0
 PDF_REPORT_CACHE  = {}
 
-# ── v3.14 : caps mis a jour ───────────────────────────────────────────────────
+#  v3.14 : caps mis a jour 
 GROUP_CAPS = {
     "financial": 35,
     "temporal":  35,   # +5 vs v3.13
@@ -103,6 +107,7 @@ GROUP_CAPS = {
     "network":   22,   # +2 vs v3.13
     "driver":     8,
     "profile":    1,
+    "community":  15,  # Nouveau groupe pour la dtection de communauts
 }
 GROUP_LABELS = {
     "financial": "Financier",
@@ -111,82 +116,82 @@ GROUP_LABELS = {
     "network":   "Reseau / Collusion",
     "driver":    "Conducteur / Mobilite",
     "profile":   "Profil Assure",
+    "community": "Communaut",
 }
 
-# ── v3.14 : mapping enrichi (nouveaux triggers) ───────────────────────────────
+#  v3.14 : mapping enrichi (nouveaux triggers) 
 FEATURE_NAME_MAPPING = {
-    "num_TOTALREGLEMENT":                    "💰 Montant du sinistre",
-    "std_TOTALREGLEMENT":                    "📊 Écart-type du montant",
-    "ratio_montant_moyen":                   "📈 Ratio montant / moyenne",
-    "ratio_montant_median":                  "📈 Ratio montant / mediane",
-    "ratio_montant_prime":                   "💰 Ratio montant / prime contrat",
-    "montant_10x_prime":                     "🚨 Montant > 10x la prime",
-    "zscore_montant":                        "📊 Écart normalise du montant",
-    "montant_3std_suspect":                  "⚠️ Montant anormal (>3σ)",
-    "ratio_montant_vs_garage":               "🔧 Montant vs garage",
-    "ratio_montant_vs_expert":               "🔍 Montant vs expert",
-    "ratio_montant_vs_client":               "👤 Montant vs client moyen",
-    "expert_cout_anormal":                   "💰 Cout expert anormal",
-    "incoherence_age_montant":               "🚗 Vehicule age + montant eleve",
-    "ratio_montant_pv_global":               "🏪 Montant vs point de vente",
-    "ratio_montant_vs_combo_job_marque":     "🔄 Montant anormal combo job/marque",
-    "decalage_survenance_declaration_jours": "⏰ Delai de declaration",
-    "declaration_tardive_30j":               "⚠️ Declaration >30 jours",
-    "declaration_tres_tardive_90j":          "🚨 Declaration >90 jours",
-    "sinistre_moins_7j_apres_effet":         "⚠️ Sinistre <7j apres effet",
-    "sinistre_moins_30j_apres_effet":        "⚠️ Sinistre <30j apres effet",
-    "sinistre_moins_7j_expiration":          "⚠️ Sinistre <7j avant expiration",
-    "sinistre_moins_30j_expiration":         "⚠️ Sinistre <30j avant expiration",
-    "declaration_apres_weekend":             "📅 Declaration post-weekend",
-    "sinistre_heure_nuit":                   "🌙 Sinistre entre 0h et 5h",
-    "sinistre_weekend":                      "📅 Sinistre samedi/dimanche",
-    "survenance_mois":                       "📅 Mois de survenance",
-    "is_weekend_DATE_SURVENANCE":            "📅 Sinistre weekend",
-    "nbr_sinistres_vehicule":                "🚗 Sinistres par vehicule",
-    "nbr_sinistres_contrat":                 "📄 Sinistres par contrat",
-    "nbr_sinistres_client":                  "👤 Sinistres par assure",
-    "nbr_sinistres_expert":                  "🔍 Sinistres par expert",
-    "nbr_sinistres_garage":                  "🔧 Sinistres par garage",
-    "nbr_sinistres_adverse":                 "🚗 Sinistres par tiers adverse",
-    "sinistres_client_12mois":               "📊 Sinistres/12 mois",
-    "client_plus3_sinistres_12m":            "⚠️ >3 sinistres/an",
-    "client_plus7_sinistres_12m":            "🚨 +7 sinistres/an",
-    "delai_moyen_sinistres":                 "⏱️ Delai moyen sinistres",
-    "cluster_temporel_vehicule":             "🕐 Sinistres rapproches vehicule",
-    "cluster_temporel_client":               "🕐 Sinistres rapproches client",
-    "velocite_recente_vehicule":             "⚡ Acceleration sinistres vehicule",
-    "velocite_recente_client":               "⚡ Acceleration sinistres client",
-    "nb_avenants_contrat":                   "📄 Nombre d'avenants",
-    "contrat_avenants_frequents":            "📄 Avenants frequents (>2)",
-    "avenant_proche_sinistre_30j":           "⚠️ Avenant <30j avant sinistre",
-    "freq_IMMATRICULATION":                  "🚗 Frequence par immatriculation",
-    "freq_EXPERT_STAREX":                    "🔍 Frequence par expert",
-    "freq_GARAGES":                          "🔧 Frequence par garage",
-    "freq_expert_meme_vehicule":             "🔄 Expert-vehicule recurrent",
-    "expert_vehicule_repete":                "🔄 Expert + vehicule repetes",
-    "adverse_repete":                        "🚗 Tiers adverse recurrent",
-    "freq_temoin":                           "👥 Frequence temoin",
-    "temoin_frequent":                       "👥 Temoin frequent (>3x)",
-    "lieu_sinistre_frequent":                "📍 Lieu sinistre recurrent",
-    "garage_taux_remplacement_eleve":        "🔧 Taux remplacement >80%",
-    "freq_combo_job_marque":                 "🔄 Combo job-marque suspect",
-    "note_conducteur_faible":                "👤 Note conducteur <5/10",
-    "note_conducteur_tres_faible":           "🚨 Note conducteur <3/10",
-    "kilometrage_annuel_eleve":              "📊 Kilometrage >30k/an",
-    "distance_sinistre_residence_elevee":    "📍 Distance sinistre >30km",
-    "distance_sinistre_residence_identical": "📍 Sinistre a domicile",
-    "distance_travail_residence_elevee":     "🏢 Travail eloigne residence",
-    "distance_travail_residence_identical":  "🏢 Travail = residence",
-    "profession_risque":                     "⚠️ Profession a risque",
-    "sinistre_grave_sans_services":          "🚨 Sinistre grave sans services",
-    "nb_services_operationnels":             "📋 Services operationnels",
-    "contrat_avenants_frequents":            "📄 Avenants frequents (>2)",
-    "sinistre_frontiere":                    "🌍 Sinistre frontiere tunisienne",
-    "montant_cumule_vehicule":               "💰 Montant cumule vehicule",
+    "num_TOTALREGLEMENT":                    " Montant du sinistre",
+    "std_TOTALREGLEMENT":                    " cart-type du montant",
+    "ratio_montant_moyen":                   " Ratio montant / moyenne",
+    "ratio_montant_median":                  " Ratio montant / mediane",
+    "ratio_montant_prime":                   " Ratio montant / prime contrat",
+    "montant_10x_prime":                     " Montant > 10x la prime",
+    "zscore_montant":                        " cart normalise du montant",
+    "montant_3std_suspect":                  " Montant anormal (>3)",
+    "ratio_montant_vs_garage":               " Montant vs garage",
+    "ratio_montant_vs_expert":               " Montant vs expert",
+    "ratio_montant_vs_client":               " Montant vs client moyen",
+    "expert_cout_anormal":                   " Cout expert anormal",
+    "incoherence_age_montant":               " Vehicule age + montant eleve",
+    "ratio_montant_pv_global":               " Montant vs point de vente",
+    "ratio_montant_vs_combo_job_marque":     " Montant anormal combo job/marque",
+    "decalage_survenance_declaration_jours": " Delai de declaration",
+    "declaration_tardive_30j":               " Declaration >30 jours",
+    "declaration_tres_tardive_90j":          " Declaration >90 jours",
+    "sinistre_moins_7j_apres_effet":         " Sinistre <7j apres effet",
+    "sinistre_moins_30j_apres_effet":        " Sinistre <30j apres effet",
+    "sinistre_moins_7j_expiration":          " Sinistre <7j avant expiration",
+    "sinistre_moins_30j_expiration":         " Sinistre <30j avant expiration",
+    "declaration_apres_weekend":             " Declaration post-weekend",
+    "sinistre_heure_nuit":                   " Sinistre entre 0h et 5h",
+    "sinistre_weekend":                      " Sinistre samedi/dimanche",
+    "survenance_mois":                       " Mois de survenance",
+    "is_weekend_DATE_SURVENANCE":            " Sinistre weekend",
+    "nbr_sinistres_vehicule":                " Sinistres par vehicule",
+    "nbr_sinistres_contrat":                 " Sinistres par contrat",
+    "nbr_sinistres_client":                  " Sinistres par assure",
+    "nbr_sinistres_expert":                  " Sinistres par expert",
+    "nbr_sinistres_garage":                  " Sinistres par garage",
+    "nbr_sinistres_adverse":                 " Sinistres par tiers adverse",
+    "sinistres_client_12mois":               " Sinistres/12 mois",
+    "client_plus3_sinistres_12m":            " >3 sinistres/an",
+    "client_plus7_sinistres_12m":            " +7 sinistres/an",
+    "delai_moyen_sinistres":                 " Delai moyen sinistres",
+    "cluster_temporel_vehicule":             " Sinistres rapproches vehicule",
+    "cluster_temporel_client":               " Sinistres rapproches client",
+    "velocite_recente_vehicule":             " Acceleration sinistres vehicule",
+    "velocite_recente_client":               " Acceleration sinistres client",
+     "nb_avenants_contrat":                   " Nombre d'avenants",
+     "contrat_avenants_frequents":            " Avenants frequents (>2)",
+     "avenant_proche_sinistre_30j":           " Avenant <30j avant sinistre",
+     "freq_IMMATRICULATION":                  " Frequence par immatriculation",
+     "freq_EXPERT_STAREX":                    " Frequence par expert",
+     "freq_GARAGES":                          " Frequence par garage",
+     "freq_expert_meme_vehicule":             " Expert-vehicule recurrent",
+     "expert_vehicule_repete":                " Expert + vehicule repetes",
+     "adverse_repete":                        " Tiers adverse recurrent",
+     "freq_temoin":                           " Frequence temoin",
+     "temoin_frequent":                       " Temoin frequent (>3x)",
+     "lieu_sinistre_frequent":                " Lieu sinistre recurrent",
+     "garage_taux_remplacement_eleve":        " Taux remplacement >80%",
+     "freq_combo_job_marque":                 " Combo job-marque suspect",
+     "note_conducteur_faible":                " Note conducteur <5/10",
+     "note_conducteur_tres_faible":           " Note conducteur <3/10",
+     "kilometrage_annuel_eleve":              " Kilometrage >30k/an",
+     "distance_sinistre_residence_elevee":    " Distance sinistre >30km",
+     "distance_sinistre_residence_identical": " Sinistre a domicile",
+     "distance_travail_residence_elevee":     " Travail eloigne residence",
+     "distance_travail_residence_identical":  " Travail = residence",
+     "profession_risque":                     " Profession a risque",
+     "sinistre_grave_sans_services":          " Sinistre grave sans services",
+     "nb_services_operationnels":             " Services operationnels",
+     "sinistre_frontiere":                    " Sinistre frontiere tunisienne",
+     "montant_cumule_vehicule":               " Montant cumule vehicule",
 }
 
 
-# ─── Helper : mapping feature --> groupe heuristique ───────────────────────────
+#  Helper : mapping feature --> groupe heuristique 
 def _infer_feature_group(feature_name: str) -> str:
     f = feature_name.lower()
 
@@ -235,6 +240,11 @@ def _infer_feature_group(feature_name: str) -> str:
     )):
         return "profile"
 
+    if any(k in f for k in (
+        "community", "communaute",
+    )):
+        return "community"
+
     return "other"
 
 
@@ -264,7 +274,7 @@ def _build_features_catalog(feature_names: list, raw_df=None) -> dict:
     return {g: v for g, v in groups.items() if v}
 
 
-# ─── Helpers generaux ─────────────────────────────────────────────────────────
+#  Helpers generaux 
 def clean_for_json(obj):
     if isinstance(obj, float) and (np.isinf(obj) or np.isnan(obj)):
         return 0
@@ -293,8 +303,9 @@ class RetrainRequest(BaseModel):
     seuil_frauduleux: Optional[float] = None
     seuil_suspect_min: Optional[float] = None
     sample_fraction: Optional[float] = 1.0
-    label_column: Optional[str] = None  # Ex: "is_fraud", "fraud_label"
+    label_column: Optional[str] = None
     notes: Optional[str] = None
+    mode: Optional[str] = "auto"  # "auto" | "supervised" | "unsupervised"
 
 
 class TrainingStatus(BaseModel):
@@ -317,7 +328,7 @@ def _initialize_training_status():
         "job_id": None,
         "status": "idle",
         "progress": 0,
-        "message": "Aucun entraînement en cours",
+        "message": "Aucun entranement en cours",
         "active_version": None,
         "error": None,
         "started_at": None,
@@ -348,20 +359,39 @@ def _get_training_status():
 
 
 def _find_supervised_label_column(df: pd.DataFrame, requested_label_column: Optional[str] = None):
-    candidate_cols = ["fraud_label", "is_fraud", "target", "y", "label", "statut_fraude"]
+    manual_candidate_cols = ["fraud_label", "target", "y", "label", "statut_fraude", "is_fraud"]
+
+    def _normalize_col_name(name: Optional[str]) -> Optional[str]:
+        return name.strip().lower() if isinstance(name, str) else None
+
+    normalized_cols = {
+        _normalize_col_name(col): col
+        for col in df.columns
+        if isinstance(col, str)
+    }
+
     if requested_label_column:
-        if requested_label_column in df.columns:
-            return requested_label_column, True
+        normalized_requested = _normalize_col_name(requested_label_column)
+        if normalized_requested in normalized_cols:
+            return normalized_cols[normalized_requested], True
         raise ValueError(f"Colonne de label explicite introuvable: {requested_label_column}")
-    for col in candidate_cols:
-        if col in df.columns:
-            return col, True
+
+    for candidate in manual_candidate_cols:
+        if candidate in normalized_cols:
+            return normalized_cols[candidate], True
     return None, False
 
 
 def _ensure_auto_is_fraud_label(detector: AutoFraudDetector, df: pd.DataFrame, contrats_df, tiers_df, sample_fraction: float):
+    # If an is_fraud column already exists, drop it before regenerating so we
+    # do not reuse stale or previously generated labels.
     if "is_fraud" in df.columns:
-        return "is_fraud"
+        df.drop(columns=["is_fraud"], inplace=True, errors="ignore")
+
+    print("\n     MODE AUTO : gnration automatique des labels is_fraud via le scoring heuristique.")
+    print("       Les mtriques F1/AUC seront calcules sur un validation set DISTINCT des donnes d'entranement.")
+    print("       Cependant, les labels eux-mmes sont issus du modle heuristique (circularit partielle).")
+    print("       Pour des mtriques fiables, fournissez une colonne 'is_fraud' labellise manuellement.\n")
 
     if not getattr(detector, "is_fitted", False) or getattr(detector, "_cached_scores", None) is None or len(getattr(detector, "_cached_scores", [])) != len(df):
         detector.fit(
@@ -383,18 +413,28 @@ def _ensure_auto_is_fraud_label(detector: AutoFraudDetector, df: pd.DataFrame, c
         1,
         np.where(scores >= SEUIL_SUSPECT_MIN, 2, 0),
     )
+
+    # Statistiques des labels gnrs
+    n_fraud  = int((df["is_fraud"] == 1).sum())
+    n_susp   = int((df["is_fraud"] == 2).sum())
+    n_normal = int((df["is_fraud"] == 0).sum())
+    n_total  = len(df)
+    print(f"    Labels auto gnrs : frauduleux={n_fraud} ({n_fraud/n_total:.1%}), "
+          f"suspect={n_susp} ({n_susp/n_total:.1%}), normal={n_normal} ({n_normal/n_total:.1%})")
+    if n_fraud / n_total > 0.20:
+        print("     Taux de fraude auto > 20%  les seuils heuristiques semblent trop agressifs.")
     return "is_fraud"
 
 
 def _run_training_job(job_id: str, payload: RetrainRequest):
     try:
-        _set_training_status(job_id, "running", 0, "Preparation du reentraînement...", app.state.training_status.get("active_version") if app.state.training_status else None)
+        _set_training_status(job_id, "running", 0, "Preparation du reentranement...", app.state.training_status.get("active_version") if app.state.training_status else None)
 
         detector = getattr(app.state, "fraud_detector", fraud_detector)
         if detector is None:
-            raise RuntimeError("Aucun detecteur de fraude disponible pour l'entraînement")
+            raise RuntimeError("Aucun detecteur de fraude disponible pour l'entranement")
         if sinistres_df is None:
-            raise RuntimeError("Donnees sinistres non disponibles pour l'entraînement")
+            raise RuntimeError("Donnees sinistres non disponibles pour l'entranement")
 
         def progress_callback(progress_pct: int, message: str):
             _set_training_status(
@@ -405,31 +445,43 @@ def _run_training_job(job_id: str, payload: RetrainRequest):
                 active_version=detector.version_manager.get_active_version(),
             )
 
-        progress_callback(5, "Demarrage du reentraînment")
+        progress_callback(5, "Demarrage du reentranment")
         label_column = None
         explicit_label = False
-        try:
-            label_column, explicit_label = _find_supervised_label_column(sinistres_df, payload.label_column)
-        except ValueError as e:
-            raise RuntimeError(str(e)) from e
-
-        if not explicit_label:
-            progress_callback(10, "Aucun label supervise trouve, generation automatique de is_fraud...")
-            label_column = _ensure_auto_is_fraud_label(
-                detector,
-                sinistres_df,
-                contrats_df,
-                tiers_df,
-                payload.sample_fraction if payload.sample_fraction is not None else 1.0,
-            )
-            progress_callback(15, f"Colonne supervisee auto-creee: {label_column}")
-            # Indiquer la source des labels dans le statut du job
-            _set_training_status(job_id, "running", app.state.training_status.get("progress", 0) if app.state.training_status else 15, f"Colonne supervisee auto-creee: {label_column}", active_version=detector.version_manager.get_active_version(), label_source="auto")
+        
+        mode = payload.mode or "auto"
+        
+        if mode == "unsupervised":
+            progress_callback(10, "Mode non supervise - entranement sans labels...")
+            label_column = None
+            explicit_label = False
+            _set_training_status(job_id, "running", 10, "Mode non supervise - entranement sans labels...", active_version=detector.version_manager.get_active_version(), label_source="unsupervised")
         else:
-            progress_callback(10, f"Utilisation du label supervise existant: {label_column}")
-            _set_training_status(job_id, "running", app.state.training_status.get("progress", 0) if app.state.training_status else 10, f"Utilisation du label supervise existant: {label_column}", active_version=detector.version_manager.get_active_version(), label_source="manual")
+            try:
+                label_column, explicit_label = _find_supervised_label_column(sinistres_df, payload.label_column)
+            except ValueError as e:
+                if mode == "supervised":
+                    raise RuntimeError(str(e)) from e
+                label_column, explicit_label = None, False
+
+            if not explicit_label:
+                progress_callback(10, "Aucun label supervise trouve, generation automatique de is_fraud...")
+                label_column = _ensure_auto_is_fraud_label(
+                    detector,
+                    sinistres_df,
+                    contrats_df,
+                    tiers_df,
+                    payload.sample_fraction if payload.sample_fraction is not None else 1.0,
+                )
+                progress_callback(15, f"Colonne supervisee auto-creee: {label_column}")
+                _set_training_status(job_id, "running", app.state.training_status.get("progress", 0) if app.state.training_status else 15, f"Colonne supervisee auto-creee: {label_column}", active_version=detector.version_manager.get_active_version(), label_source="auto")
+            else:
+                progress_callback(10, f"Utilisation du label supervise existant: {label_column}")
+                _set_training_status(job_id, "running", app.state.training_status.get("progress", 0) if app.state.training_status else 10, f"Utilisation du label supervise existant: {label_column}", active_version=detector.version_manager.get_active_version(), label_source="manual")
 
         before_active_version = detector.version_manager.get_active_version()
+
+        label_source_param = "unsupervised" if mode == "unsupervised" else ("auto" if not explicit_label else "manual")
 
         detector.fit(
             sinistres_df,
@@ -437,15 +489,16 @@ def _run_training_job(job_id: str, payload: RetrainRequest):
             tiers_df,
             geocoder=geocoder,
             label_column=label_column,
-            label_source='auto' if not explicit_label else 'manual',
+            label_source=label_source_param,
             sample_fraction=payload.sample_fraction if payload.sample_fraction is not None else 1.0,
             progress_callback=progress_callback,
+            analyst_comment=payload.notes or "",
         )
 
         version_num = detector.version_manager.get_active_version()
         if version_num is None or version_num == before_active_version:
-            # Le détecteur n'a pas créé de version automatiquement pendant fit(),
-            # on la crée ici.
+            # Le dtecteur n'a pas cr de version automatiquement pendant fit(),
+            # on la cre ici.
             version_num = detector.version_manager.get_next_version_number()
             version_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
@@ -461,51 +514,74 @@ def _run_training_job(job_id: str, payload: RetrainRequest):
                 version_path,
                 metrics,
                 notes=payload.notes or "Reentrainement declenche depuis l'API",
+                config_snapshot=getattr(detector, 'config_manager', None).to_dict() if getattr(detector, 'config_manager', None) is not None else None,
+                analyst_comment=payload.notes or "",
             )
             detector.version_manager.set_active_version(version_num)
         else:
-            # Le détecteur a déjà sauvegardé la version durant fit().
+            # Le dtecteur a dj sauvegard la version durant fit().
             version_num = int(version_num)
 
         default_model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "auto_fraud_model.pkl")
         detector.save(default_model_path)
 
-        _set_training_status(job_id, "completed", 100, f"Reentrainement termine, version active v{version_num}", active_version=version_num)
+        #  Avertissement si mtriques trop parfaites (overfitting possible) 
+        metrics_snapshot = getattr(detector, "_training_metrics", {})
+        eval_set = metrics_snapshot.get("eval_set", "unknown")
+        f1 = metrics_snapshot.get("f1_score")
+        auc = metrics_snapshot.get("auc_roc")
+        _perf_warning = ""
+        if eval_set == "train_full" and f1 is not None and f1 >= 0.99:
+            _perf_warning = (
+                "  ATTENTION : mtriques calcules sur donnes d'ENTRANEMENT "
+                "(pas de validation set disponible)  ces valeurs indiquent un surapprentissage."
+            )
+        elif eval_set == "validation_20pct" and f1 is not None and f1 >= 0.99:
+            _perf_warning = (
+                "  F1=1.0 sur validation set  vrifiez la qualit des labels is_fraud "
+                "(labels trop simplistes ou donnes de test trop similaires  l'entranement)."
+            )
+
+        completion_msg = f"Reentrainement termine, version active v{version_num}"
+        if _perf_warning:
+            completion_msg += _perf_warning
+
+        _set_training_status(job_id, "completed", 100, completion_msg, active_version=version_num)
     except Exception as e:
         error_message = str(e)
         _set_training_status(
             job_id,
             "failed",
             app.state.training_status.get("progress", 0) if app.state.training_status else 0,
-            "Échec du reentraînement : " + error_message,
+            "chec du reentranement : " + error_message,
             active_version=app.state.training_status.get("active_version") if app.state.training_status else None,
             error=error_message,
         )
         raise
 
 
-# ─── DÉMARRAGE ────────────────────────────────────────────────────────────────
+#  DMARRAGE 
 @app.on_event("startup")
 async def startup():
     global fraud_detector, sinistres_df, contrats_df, tiers_df
     global neo4j_loader, community_detector, geocoder
 
     print("\n" + "=" * 70)
-    print("SYSTÈME AUTO DE DÉTECTION DE FRAUDE ")
+    print("SYSTME AUTO DE DTECTION DE FRAUDE ")
     print(f"Seuils --> Frauduleux > {SEUIL_FRAUDULEUX} | Suspect {SEUIL_SUSPECT_MIN}-{SEUIL_FRAUDULEUX} | Normal < {SEUIL_SUSPECT_MIN}")
     print("Mode : poids recalibres v3.14 --- score moyen cible 35-45")
     print("=" * 70)
 
-    # ── Initialisation du geocodeur ───────────────────────────────────────
+    #  Initialisation du geocodeur 
     if GEO_AVAILABLE:
         try:
             geocoder = TunisiaGeocoder(
                 cache_path="data/geocode_cache.json",
                 enable_api=False,
             )
-            print("✅ TunisiaGeocoder initialise (offline)")
+            print(" TunisiaGeocoder initialise (offline)")
         except Exception as e:
-            print(f"⚠️ TunisiaGeocoder echoue : {e}")
+            print(f" TunisiaGeocoder echoue : {e}")
             geocoder = None
     else:
         geocoder = None
@@ -517,37 +593,37 @@ async def startup():
         tiers_df     = data_loader.get_tiers()
 
         if sinistres_df is None or len(sinistres_df) == 0:
-            print("❌ Aucun fichier sinistres.xlsx valide n'a pu être chargé depuis /data")
+            print(" Aucun fichier sinistres.xlsx valide n'a pu tre charg depuis /data")
             return
 
         print(
-            f"✅ Sinistres : {len(sinistres_df)} "
+            f" Sinistres : {len(sinistres_df)} "
             f"| Contrats : {len(contrats_df) if contrats_df is not None else 0} "
             f"| Tiers : {len(tiers_df) if tiers_df is not None else 0}"
         )
 
-        # ── Tentative de chargement du modele sauvegarde ─────────────────────
+        #  Tentative de chargement du modele sauvegarde 
         import os
         model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "auto_fraud_model.pkl")
-        fraud_detector = AutoFraudDetector()
+        fraud_detector = AutoFraudDetector(community_detector=community_detector)
 
-        # ── Verifier s'il y a une version active ──────────────────────────────
+        #  Verifier s'il y a une version active 
         active_version = fraud_detector.version_manager.get_active_version()
         if active_version is not None:
-            print(f"🔄 Version active detectee : v{active_version}")
+            print(f" Version active detectee : v{active_version}")
             if fraud_detector.set_active_version(active_version):
-                print(f"✅ Version active v{active_version} chargee")
+                print(f" Version active v{active_version} chargee")
                 model_loaded = True  # Version active chargee avec succes
             else:
-                print(f"⚠️ Impossible de charger la version active v{active_version}, chargement du modele par defaut")
+                print(f" Impossible de charger la version active v{active_version}, chargement du modele par defaut")
                 model_loaded = fraud_detector.load(model_path)
         else:
-            print(f"🔍 Aucune version active, tentative de chargement du modele par defaut depuis : {model_path}")
+            print(f" Aucune version active, tentative de chargement du modele par defaut depuis : {model_path}")
             model_loaded = fraud_detector.load(model_path)
 
         if model_loaded:
-            print("✅ Modele charge depuis le fichier sauvegarde")
-            print(f"   Modele entraîne: {fraud_detector.is_fitted}")
+            print(" Modele charge depuis le fichier sauvegarde")
+            print(f"   Modele entrane: {fraud_detector.is_fitted}")
             print(f"   Cache scores: {fraud_detector._cached_scores is not None}")
             if fraud_detector._cached_scores is not None:
                 print(f"   Taille cache: {len(fraud_detector._cached_scores)}")
@@ -567,11 +643,13 @@ async def startup():
                     version_path,
                     metrics,
                     notes="Version initiale non supervisee",
+                    config_snapshot=getattr(fraud_detector, 'config_manager', None).to_dict() if getattr(fraud_detector, 'config_manager', None) is not None else None,
+                    analyst_comment="",
                 )
                 fraud_detector.version_manager.set_active_version(version_num)
-                print(f"✅ Version initiale v{version_num} creee et activee")
+                print(f" Version initiale v{version_num} creee et activee")
         else:
-            print("📈 Aucun modele sauvegarde trouve --- entraînement d'un nouveau modele")
+            print(" Aucun modele sauvegarde trouve --- entranement d'un nouveau modele")
             fraud_detector.fit(sinistres_df, contrats_df, tiers_df, geocoder=geocoder)
             version_num = fraud_detector.version_manager.get_next_version_number()
             version_path = os.path.join(
@@ -587,6 +665,8 @@ async def startup():
                 version_path,
                 metrics,
                 notes="Version initiale non supervisee",
+                config_snapshot=getattr(fraud_detector, 'config_manager', None).to_dict() if getattr(fraud_detector, 'config_manager', None) is not None else None,
+                analyst_comment="",
             )
             fraud_detector.version_manager.set_active_version(version_num)
             fraud_detector.save(model_path)
@@ -595,7 +675,7 @@ async def startup():
             geocoder.save_cache()
 
         validation = fraud_detector.validate_scoring()
-        print(f"\n📊 VALIDATION DU SCORING :")
+        print(f"\n VALIDATION DU SCORING :")
         print(f"   Score moyen    : {validation.get('score_moyen', 0):.1f}/100  (cible : 35-45)")
         print(f"   % Frauduleux   : {validation.get('pct_frauduleux', 0):.2f}%  (cible : 5-15%)")
         print(f"   % Suspects     : {validation.get('pct_suspect', 0):.2f}%")
@@ -603,33 +683,34 @@ async def startup():
 
     except Exception as e:
         import traceback
-        print(f"❌ Erreur ML Excel : {e}")
+        print(f" Erreur ML Excel : {e}")
         traceback.print_exc()
 
-    # ── Neo4j : initialisation mais PAS de pipeline batch ───────────────────
+    #  Neo4j : initialisation mais PAS de pipeline batch 
     if NEO4J_AVAILABLE:
         try:
             neo4j_loader = PFE2026Neo4jLoader()
             if neo4j_loader.driver:
                 community_detector = CommunityDetector(neo4j_loader.driver, neo4j_loader.database)
-                print("✅ Neo4j AuraDB Community Detector pret")
+                db_type = "LOCALE" if "localhost" in neo4j_loader.uri else "AURADB"
+                print(f" Neo4j {db_type} Community Detector pret")
                 # Plus d'appel a run_neo4j_pipeline() -> scoring sinistre par sinistre
             else:
-                print("⚠️ Connexion Neo4j echouee")
+                print(" Connexion Neo4j echouee")
         except Exception as e:
             import traceback
-            print(f"❌ Erreur Neo4j startup : {e}")
+            print(f" Erreur Neo4j startup : {e}")
             traceback.print_exc()
     else:
-        print("⚠️ Modules Neo4j non importes")
+        print(" Modules Neo4j non importes")
 
-    # ─── STOCKAGE DANS app.state POUR PARTAGE AVEC sinistre_router ─────────
+    #  STOCKAGE DANS app.state POUR PARTAGE AVEC sinistre_router 
     app.state.fraud_detector = fraud_detector
     app.state.neo4j_loader = neo4j_loader
     app.state.community_detector = community_detector
     app.state.training_status = _initialize_training_status()
 
-    print("✅ SYSTÈME PRÊT --- http://127.0.0.1:8000/docs")
+    print(" SYSTME PRT --- http://127.0.0.1:8000/docs")
 
 
 @app.on_event("shutdown")
@@ -643,13 +724,13 @@ async def shutdown():
 def _check_model():
     detector = getattr(app.state, "fraud_detector", fraud_detector)
     if detector is None or not getattr(detector, "is_fitted", False):
-        raise HTTPException(503, "Modele non entraîne --- demarrage en cours")
+        raise HTTPException(503, "Modele non entrane --- demarrage en cours")
     return detector
 
 
-# ═════════════════════════════════════════════════════════════════════════════
+# 
 # ROUTES API (inchangees)
-# ═════════════════════════════════════════════════════════════════════════════
+# 
 
 @app.get("/")
 async def root():
@@ -986,7 +1067,7 @@ async def get_top_points_vente(limit: int = 10):
         )
         return stats.to_dict("records")
     except Exception as e:
-        print(f"⚠️ Erreur top-points-vente: {e}")
+        print(f" Erreur top-points-vente: {e}")
         return []
 
 
@@ -1155,16 +1236,16 @@ async def retrain_model(payload: RetrainRequest, background_tasks: BackgroundTas
     _check_model()
     current_status = _get_training_status()
     if current_status["status"] == "running":
-        raise HTTPException(409, "Un entraînement est deja en cours")
+        raise HTTPException(409, "Un entranement est deja en cours")
 
     job_id = str(uuid4())
-    _set_training_status(job_id, "running", 0, "Demarrage du reentraînement...", None)
+    _set_training_status(job_id, "running", 0, "Demarrage du reentranement...", None)
     background_tasks.add_task(_run_training_job, job_id, payload)
 
     return {
         "status": "started",
         "job_id": job_id,
-        "message": "Reentraînement lance en arriere-plan",
+        "message": "Reentranement lance en arriere-plan",
         "progress_url": "/model/train/status",
     }
 
@@ -1174,9 +1255,9 @@ async def train_status():
     return _get_training_status()
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# 
 # CONFIGURATION DYNAMIQUE DU SCORING
-# ════════════════════════════════════════════════════════════════════════════
+# 
 
 @app.get("/model/current-config")
 async def get_current_config():
@@ -1202,8 +1283,8 @@ async def reconfigure_scoring(
 ):
     """
     Reconfigure les seuils de scoring.
-    - Les modifications de poids (group_weights, indicator_weights) déclenchent un réentraînement du modèle.
-    - Les modifications de seuils peuvent être appliquées directement via un re-score.
+    - Les modifications de poids (group_weights, indicator_weights) dclenchent un rentranement du modle.
+    - Les modifications de seuils peuvent tre appliques directement via un re-score.
 
     Body attendu:
     {
@@ -1240,20 +1321,20 @@ async def reconfigure_scoring(
     SEUIL_SUSPECT_MIN = fraud_detector.config.thresholds["suspect_min"]
     SEUIL_FRAUDULEUX = fraud_detector.config.thresholds["frauduleux"]
 
-    # 3. Si les poids ont change, lancer un ré-entraînement complet en arrière-plan
+    # 3. Si les poids ont change, lancer un r-entranement complet en arrire-plan
     weight_change = bool(payload.get("group_weights")) or bool(payload.get("indicator_weights"))
     job_id = str(uuid4())
     if weight_change:
-        _set_training_status(job_id, "running", 0, "Modification des poids détectée, lancement du ré-entraînement...", None)
-        retrain_payload = RetrainRequest(notes="Ré-entraînement suite à modification des poids du scoring")
+        _set_training_status(job_id, "running", 0, "Modification des poids dtecte, lancement du r-entranement...", None)
+        retrain_payload = RetrainRequest(notes=payload.get("notes") or "R-entranement suite  modification des poids du scoring")
         background_tasks.add_task(_run_training_job, job_id, retrain_payload)
         progress_url = "/model/train/status"
-        message = "Modification des poids détectée, ré-entraînement du modèle lancé en arrière-plan"
+        message = "Modification des poids dtecte, r-entranement du modle lanc en arrire-plan"
     else:
         _set_training_status(job_id, "running", 0, "Re-scoring avec nouvelle configuration...", None)
-        background_tasks.add_task(_run_rescoring_and_save_version, job_id, result["config_snapshot"])
+        background_tasks.add_task(_run_rescoring_and_save_version, job_id, result["config_snapshot"], payload.get("notes") or "")
         progress_url = f"/model/rescore/status?job_id={job_id}"
-        message = "Configuration appliquee, re-scoring et sauvegarde en arrière-plan"
+        message = "Configuration appliquee, re-scoring et sauvegarde en arrire-plan"
 
     return {
         "success": True,
@@ -1273,9 +1354,9 @@ async def rescore_status(job_id: str = Query(...)):
     return status
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# UPLOAD DE NOUVELLES DONNÉES EXCEL
-# ════════════════════════════════════════════════════════════════════════════
+# 
+# UPLOAD DE NOUVELLES DONNES EXCEL
+# 
 
 @app.post("/model/upload-data")
 async def upload_data(files: List[UploadFile] = File(...)):
@@ -1290,7 +1371,7 @@ async def upload_data(files: List[UploadFile] = File(...)):
             "success": bool,
             "files_received": ["sinistres.xlsx", ...],
             "saved_to": ["data/sinistres_20260511_143022.xlsx", ...],
-            "next_step": "POST /model/train pour re-entraîner"
+            "next_step": "POST /model/train pour re-entraner"
         }
     """
     global sinistres_df, contrats_df, tiers_df
@@ -1299,7 +1380,7 @@ async def upload_data(files: List[UploadFile] = File(...)):
     _check_model()
 
     if len(files) < 2 or len(files) > 3:
-        raise HTTPException(400, "4-6 fichiers attendus: sinistres, contrats, tiers (optionnel)")
+        raise HTTPException(400, "2-3 fichiers attendus: sinistres, contrats, tiers (optionnel)")
 
     # 1. Valider les noms de fichiers
     expected_names = {"sinistres", "contrats", "tiers"}
@@ -1332,23 +1413,23 @@ async def upload_data(files: List[UploadFile] = File(...)):
         with open(save_path, "wb") as f:
             f.write(content)
 
-        # Sauvegarder également sous le nom fixe attendu par DataLoader
+        # Sauvegarder galement sous le nom fixe attendu par DataLoader
         fixed_path = os.path.join(data_dir, f"{matched}.xlsx")
         with open(fixed_path, "wb") as f_fixed:
             f_fixed.write(content)
 
         saved_paths.append(save_path)
-        print(f"✅ Fichier sauvegarde: {save_path}")
-        print(f"✅ Fichier fixe mis a jour: {fixed_path}")
+        print(f" Fichier sauvegarde: {save_path}")
+        print(f" Fichier fixe mis a jour: {fixed_path}")
 
-    # 3. Recharger DataLoader avec les nouveaux fichiers uploadés
+    # 3. Recharger DataLoader avec les nouveaux fichiers uploads
     data_loader.load_all(base_path=data_dir)
     sinistres_df = data_loader.get_sinistres()
     contrats_df = data_loader.get_contrats()
     tiers_df = data_loader.get_tiers()
 
     print(
-        f"✅ Donnees rechargees apres upload : "
+        f" Donnees rechargees apres upload : "
         f"Sinistres={len(sinistres_df) if sinistres_df is not None else 0}, "
         f"Contrats={len(contrats_df) if contrats_df is not None else 0}, "
         f"Tiers={len(tiers_df) if tiers_df is not None else 0}"
@@ -1358,14 +1439,14 @@ async def upload_data(files: List[UploadFile] = File(...)):
         "success": True,
         "files_received": list(uploaded_names),
         "saved_to": saved_paths,
-        "note": "Fichiers uploades et donnes rechargees. Lancez POST /model/train pour ré-entraîner.",
+        "note": "Fichiers uploades et donnes rechargees. Lancez POST /model/train pour r-entraner.",
         "next_step": "POST /model/train"
     }
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# 
 # COMPARAISON DE CONFIGURATIONS
-# ════════════════════════════════════════════════════════════════════════════
+# 
 
 @app.get("/model/config-history")
 async def get_config_history(limit: int = 10):
@@ -1382,23 +1463,23 @@ async def get_config_history(limit: int = 10):
 @app.get("/model/labels/preview")
 def labels_preview(sample: int = 10):
     """
-    Aperçu des labels supervisés disponibles ou générés automatiquement.
+    Aperu des labels superviss disponibles ou gnrs automatiquement.
 
     Retourne:
       - label_source: 'manual'|'auto'
-      - label_column: nom de la colonne utilisée
+      - label_column: nom de la colonne utilise
       - summary: counts par valeur
-      - samples: échantillon des premières lignes avec le label
+      - samples: chantillon des premires lignes avec le label
     """
     _check_model()
     if sinistres_df is None:
-        raise HTTPException(400, "Données sinistres non disponibles. Upload des fichiers requis.")
+        raise HTTPException(400, "Donnes sinistres non disponibles. Upload des fichiers requis.")
 
-    # 1) Vérifier présence d'un label manuel
+    # 1) Vrifier prsence d'un label manuel
     try:
         col, explicit = _find_supervised_label_column(sinistres_df)
     except Exception as e:
-        raise HTTPException(500, f"Erreur lors de la détection des labels: {e}")
+        raise HTTPException(500, f"Erreur lors de la dtection des labels: {e}")
 
     if explicit and col is not None:
         summary = sinistres_df[col].value_counts().to_dict()
@@ -1411,13 +1492,13 @@ def labels_preview(sample: int = 10):
             "samples": samples,
         }
 
-    # 2) Pas de label manuel -> générer un aperçu sans modifier la table principale
+    # 2) Pas de label manuel -> gnrer un aperu sans modifier la table principale
     tmp = sinistres_df.copy()
     detector = getattr(app.state, "fraud_detector", fraud_detector)
     try:
         label_col = _ensure_auto_is_fraud_label(detector, tmp, contrats_df, tiers_df, 1.0)
     except Exception as e:
-        raise HTTPException(500, f"Impossible de générer labels auto: {e}")
+        raise HTTPException(500, f"Impossible de gnrer labels auto: {e}")
 
     summary = tmp[label_col].value_counts().to_dict()
     samples = tmp[[label_col]].head(sample).to_dict(orient='records')
@@ -1434,11 +1515,11 @@ def labels_preview(sample: int = 10):
 def reload_data():
     """Force le rechargement des fichiers dans `backend/data` en appelant `DataLoader.load_all()`.
 
-    Retourne l'état du chargement et les counts de lignes si succès.
+    Retourne l'tat du chargement et les counts de lignes si succs.
     """
     try:
         ok = data_loader.load_all()
-        # Mettre à jour les DataFrames en mémoire
+        # Mettre  jour les DataFrames en mmoire
         global sinistres_df, contrats_df, tiers_df
         sinistres_df = data_loader.get_sinistres()
         contrats_df = data_loader.get_contrats()
@@ -1446,7 +1527,7 @@ def reload_data():
 
         return {
             "success": bool(ok),
-            "message": "Données rechargées" if ok else "Échec du rechargement",
+            "message": "Donnes recharges" if ok else "chec du rechargement",
             "stats": data_loader.stats,
         }
     except Exception as e:
@@ -1486,9 +1567,9 @@ async def rollback_config(version: str):
     }
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# PRÉVISUALISATION AVANT APPLICATION
-# ════════════════════════════════════════════════════════════════════════════
+# 
+# PRVISUALISATION AVANT APPLICATION
+# 
 
 @app.post("/model/preview-reconfigure")
 async def preview_reconfigure(payload: dict):
@@ -1531,7 +1612,7 @@ async def preview_reconfigure(payload: dict):
         # On approxime en re-callant calculate_grouped_score() avec les nouveaux poids
         # Mais cela necessite d'avoir les features brutes
         # Pour le POC, on peut simplement montrer l'impact des seuils
-        after = before  # À implementer: vrai re-scoring simule
+        after = before  #  implementer: vrai re-scoring simule
         after_scores.append(after)
         after_status.append(fraud_detector._status_from_score(after)[0])
 
@@ -1552,19 +1633,19 @@ async def preview_reconfigure(payload: dict):
         },
         "crossover_count": changes,
         "mean_delta": float(np.mean([a - b for a, b in zip(after_scores, before_scores)])),
-        "note": "Preview simplifiee (score identique). À implementer: calcul reel avec nouvelles features."
+        "note": "Preview simplifiee (score identique).  implementer: calcul reel avec nouvelles features."
     }
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# 
 # HELPER: RE-SCORING ASYNCHRONE
-# ════════════════════════════════════════════════════════════════════════════
+# 
 
 async def _run_rescoring_job(job_id: str, new_config: dict):
     """
     Re-score tous les sinistres avec la nouvelle configuration.
 
-    Étapes:
+    tapes:
     1. Met a jour la config du fraud_detector
     2. Pour chaque sinistre: calcule grouped_score + nouveau score final
     3. Met a jour le cache
@@ -1600,7 +1681,7 @@ async def _run_rescoring_job(job_id: str, new_config: dict):
             # Recalculer grouped_score avec nouvelle config
             gs = fraud_detector.calculate_grouped_score(i)
 
-            # ML score reste le meme (pas de re-entraînement)
+            # ML score reste le meme (pas de re-entranement)
             if_score  = fraud_detector._data_cache["scores_if"][i]
             lof_score = fraud_detector._data_cache["scores_lof"][i]
             ee_score  = fraud_detector._data_cache["scores_ee"][i]
@@ -1643,18 +1724,18 @@ async def _run_rescoring_job(job_id: str, new_config: dict):
         fraud_detector.config_manager.save()
 
         _set_training_status(job_id, "completed", 100, "Re-scoring termine", None)
-        print(f"✅ Re-scoring termine: {n} sinistres mis a jour (job {job_id})")
+        print(f" Re-scoring termine: {n} sinistres mis a jour (job {job_id})")
 
     except Exception as e:
         _set_training_status(job_id, "failed", 0, f"Erreur: {str(e)}", None)
-        print(f"❌ Erreur re-scoring job {job_id}: {e}")
+        print(f" Erreur re-scoring job {job_id}: {e}")
 
 
-async def _run_rescoring_and_save_version(job_id: str, new_config: dict):
+async def _run_rescoring_and_save_version(job_id: str, new_config: dict, analyst_comment: str = ""):
     """
     Re-score tous les sinistres et sauvegarde une nouvelle version du modele.
     
-    Étapes:
+    tapes:
     1. Execute le rescoring
     2. Calcule les metriques
     3. Sauvegarde le modele comme nouvelle version
@@ -1746,13 +1827,31 @@ async def _run_rescoring_and_save_version(job_id: str, new_config: dict):
             "pct_normal": float(np.sum(new_scores < SEUIL_SUSPECT_MIN) / len(new_scores) * 100),
         }
 
-        # Sauvegarder la version avec metriques
-        notes = f"Reconfiguration appliquee: seuils={fraud_detector.config.thresholds}, poids_groupes={fraud_detector.config.group_weights}"
+        # Conserver les KPI de la version active prcdente
+        prev_info = fraud_detector.version_manager.get_version_info(fraud_detector.version_manager.get_active_version()) or {}
+        prev_metrics = prev_info.get("metrics", {})
+        kpi_keys = ["f1_score", "precision", "recall", "accuracy", "auc_roc"]
+
+        for k in kpi_keys:
+            if k in prev_metrics and prev_metrics[k] is not None:
+                metrics[k] = prev_metrics[k]
+
+        # Get actual label_source from detector state
+        actual_is_supervised = fraud_detector._supervised_labels is not None
+        metrics["is_supervised"] = actual_is_supervised
+        metrics["label_source"] = "manual" if fraud_detector._label_source == "manual" else ("unsupervised" if fraud_detector._label_source == "unsupervised" else "auto")
+
+        seuils = fraud_detector.config.thresholds
+        poids = fraud_detector.config.group_weights
+        notes = f"Reconfiguration appliquee\nSeuils: Normal < {seuils['normal_max']:.1f} | Suspect {seuils['suspect_min']:.1f}-{seuils['frauduleux']:.1f} | Frauduleux > {seuils['frauduleux']:.1f}\nPoids groupes: " + ", ".join([f"{k}: {v}" for k, v in poids.items()])
+
         fraud_detector.version_manager.save_version(
             version_num,
             version_path,
             metrics,
-            notes=notes
+            notes=notes,
+            config_snapshot=getattr(fraud_detector, 'config_manager', None).to_dict() if getattr(fraud_detector, 'config_manager', None) is not None else None,
+            analyst_comment=analyst_comment,
         )
 
         # Activer la nouvelle version
@@ -1769,11 +1868,11 @@ async def _run_rescoring_and_save_version(job_id: str, new_config: dict):
             f"Nouvelle version v{version_num} creee et activee avec succes",
             version_num
         )
-        print(f"✅ Rescoring + Version {version_num} sauvegardee et activee (job {job_id})")
+        print(f" Rescoring + Version {version_num} sauvegardee et activee (job {job_id})")
 
     except Exception as e:
         _set_training_status(job_id, "failed", 0, f"Erreur: {str(e)}", None)
-        print(f"❌ Erreur rescoring+sauvegarde job {job_id}: {e}")
+        print(f" Erreur rescoring+sauvegarde job {job_id}: {e}")
 
 
 @app.get("/diagnostic")
@@ -1804,9 +1903,9 @@ async def get_diagnostic():
     return result
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# 
 # RAPPORT PDF SINISTRE --- v3.14
-# ════════════════════════════════════════════════════════════════════════════
+# 
 @app.get("/rapport/{sinistre_id}/pdf")
 async def get_rapport_pdf(sinistre_id: int):
     _check_model()
@@ -1838,17 +1937,17 @@ async def get_rapport_pdf(sinistre_id: int):
     if statut == "frauduleux":
         c_main, c_bg, label_statut = (
             colors.HexColor("#C53030"), colors.HexColor("#FED7D7"),
-            f"🚨 FRAUDULEUX --- Score {score_total:.1f}/100 > {SEUIL_FRAUDULEUX:.0f}",
+            f" FRAUDULEUX --- Score {score_total:.1f}/100 > {SEUIL_FRAUDULEUX:.0f}",
         )
     elif statut == "suspect":
         c_main, c_bg, label_statut = (
             colors.HexColor("#C05621"), colors.HexColor("#FEEBC8"),
-            f"⚠️ SUSPECT --- Score {score_total:.1f}/100 ∈ [{SEUIL_SUSPECT_MIN:.0f}--{SEUIL_FRAUDULEUX:.0f}]",
+            f" SUSPECT --- Score {score_total:.1f}/100  [{SEUIL_SUSPECT_MIN:.0f}--{SEUIL_FRAUDULEUX:.0f}]",
         )
     else:
         c_main, c_bg, label_statut = (
             colors.HexColor("#276749"), colors.HexColor("#C6F6D5"),
-            f"✅ NON FRAUDULEUX --- Score {score_total:.1f}/100 < {SEUIL_SUSPECT_MIN:.0f}",
+            f" NON FRAUDULEUX --- Score {score_total:.1f}/100 < {SEUIL_SUSPECT_MIN:.0f}",
         )
 
     styles = getSampleStyleSheet()
@@ -1871,7 +1970,7 @@ async def get_rapport_pdf(sinistre_id: int):
     )
     story = []
 
-    story.append(Paragraph("RAPPORT DE DÉTECTION DE FRAUDE", s_title))
+    story.append(Paragraph("RAPPORT DE DTECTION DE FRAUDE", s_title))
     story.append(Paragraph("Systeme Automatique v3.14", s_sub))
     story.append(Paragraph(
         f"Sinistre #{sinistre_id}  |  {datetime.now().strftime('%d/%m/%Y %H:%M')}", s_sub
@@ -1895,14 +1994,14 @@ async def get_rapport_pdf(sinistre_id: int):
     # Score par groupe
     if scores_par_groupe:
         story.append(Paragraph(
-            "📊 SCORE PAR GROUPE",
+            " SCORE PAR GROUPE",
             sty("H2", fontSize=12, fontName="Helvetica-Bold", spaceAfter=8),
         ))
         group_data = [["Groupe", "Score", "Max", "Utilisation"]]
         for group, score in scores_par_groupe.items():
             max_score = GROUP_CAPS.get(group, 0)
             pct       = (score / max_score * 100) if max_score > 0 else 0
-            pct_label = f"{pct:.0f}%" if pct <= 100 else f"{pct:.0f}% ⚠"
+            pct_label = f"{pct:.0f}%" if pct <= 100 else f"{pct:.0f}% "
             group_data.append([GROUP_LABELS.get(group, group), f"{score:.1f}", str(max_score), pct_label])
 
         group_table = Table(group_data, colWidths=[5.5*cm, 2.5*cm, 2.5*cm, 2.5*cm])
@@ -1922,7 +2021,7 @@ async def get_rapport_pdf(sinistre_id: int):
 
     # Score final
     story.append(Paragraph(
-        "📌 SCORE FINAL DE SUSPICION",
+        " SCORE FINAL DE SUSPICION",
         sty("H2", fontSize=12, fontName="Helvetica-Bold", spaceAfter=8),
     ))
     final_score_data = [
@@ -1947,12 +2046,12 @@ async def get_rapport_pdf(sinistre_id: int):
 
     # Informations sinistre
     story.append(Paragraph(
-        "📋 INFORMATIONS SINISTRE",
+        " INFORMATIONS SINISTRE",
         sty("H2", fontSize=12, fontName="Helvetica-Bold", spaceAfter=8),
     ))
     sin_data = [
-        ["N° Sinistre",      safe_str(row.get("NUM_SINISTRE"))],
-        ["N° Contrat",       safe_str(row.get("NUM_CONTRAT"))],
+        ["N Sinistre",      safe_str(row.get("NUM_SINISTRE"))],
+        ["N Contrat",       safe_str(row.get("NUM_CONTRAT"))],
         ["Immatriculation",  safe_str(row.get("IMMATRICULATION"))],
         ["Date survenance",  fmt_date(row.get("DATE_SURVENANCE"))],
         ["Date declaration", fmt_date(row.get("DATE_DECLARATION"))],
@@ -1977,7 +2076,7 @@ async def get_rapport_pdf(sinistre_id: int):
     # Indicateurs detectes
     if indicateurs:
         story.append(Paragraph(
-            f"⚠️ INDICATEURS DÉTECTÉS ({len(indicateurs)})",
+            f" INDICATEURS DTECTS ({len(indicateurs)})",
             sty("H2", fontSize=12, fontName="Helvetica-Bold", spaceAfter=8,
                 textColor=colors.HexColor("#C05621")),
         ))
@@ -2073,7 +2172,7 @@ async def get_rapport_pdf(sinistre_id: int):
         story.append(Spacer(1, 14))
     else:
         story.append(Paragraph(
-            "✅ Aucun indicateur de fraude detecte.",
+            " Aucun indicateur de fraude detecte.",
             sty("OK", fontSize=10, textColor=colors.HexColor("#276749"), spaceAfter=14),
         ))
 
@@ -2132,10 +2231,10 @@ async def get_evolution_pdf():
     buffer = BytesIO()
     doc    = SimpleDocTemplate(
         buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm,
-        topMargin=1.8*cm, bottomMargin=1.8*cm, title="Rapport Évolution",
+        topMargin=1.8*cm, bottomMargin=1.8*cm, title="Rapport volution",
     )
     story = []
-    story.append(Paragraph("RAPPORT D'ÉVOLUTION ANNUELLE", s_title))
+    story.append(Paragraph("RAPPORT D'VOLUTION ANNUELLE", s_title))
     story.append(Paragraph(f"v3.14  |  {datetime.now().strftime('%d/%m/%Y %H:%M')}", s_sub))
     story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor("#2D3748")))
     story.append(Spacer(1, 14))
@@ -2201,7 +2300,7 @@ async def get_dashboard_pdf():
         topMargin=1.8*cm, bottomMargin=1.8*cm, title="Dashboard",
     )
     story = []
-    story.append(Paragraph("TABLEAU DE BORD - DÉTECTION DE FRAUDE", s_title))
+    story.append(Paragraph("TABLEAU DE BORD - DTECTION DE FRAUDE", s_title))
     story.append(Paragraph(
         f"v3.14  |  {datetime.now().strftime('%d/%m/%Y %H:%M')}  |  {total:,} sinistres",
         s_sub,
@@ -2251,11 +2350,11 @@ async def get_dashboard_pdf():
     )
 
 
-# ─── Communautes ──────────────────────────────────────────────────────────────
+#  Communautes 
 @app.get("/communities")
 async def get_communities(refresh: bool = False):
     if community_detector is None:
-        raise HTTPException(503, "Neo4j AuraDB non connecte")
+        raise HTTPException(503, "Neo4j non connecte")
     try:
         return community_detector.get_full_analysis(force_refresh=refresh)
     except Exception as e:
@@ -2265,11 +2364,11 @@ async def get_communities(refresh: bool = False):
 @app.get("/communities/graph")
 async def get_communities_graph(refresh: bool = False):
     if community_detector is None:
-        raise HTTPException(503, "Neo4j AuraDB non connecte")
+        raise HTTPException(503, "Neo4j non connecte")
     try:
         data = community_detector.get_full_analysis(force_refresh=refresh)
         return data.get("graph", {"nodes": [], "edges": [], "communities": [],
-                                   "total_nodes": 0, "total_edges": 0})
+                                 "total_nodes": 0, "total_edges": 0})
     except Exception as e:
         raise HTTPException(500, f"Erreur donnees graphe : {e}")
 
@@ -2277,7 +2376,7 @@ async def get_communities_graph(refresh: bool = False):
 @app.get("/communities/stats")
 async def get_communities_stats():
     if community_detector is None:
-        raise HTTPException(503, "Neo4j AuraDB non connecte")
+        raise HTTPException(503, "Neo4j non connecte")
     try:
         return community_detector.get_full_analysis()["stats"]
     except Exception as e:
@@ -2287,7 +2386,7 @@ async def get_communities_stats():
 @app.get("/communities/{community_id}")
 async def get_community_detail(community_id: int):
     if community_detector is None:
-        raise HTTPException(503, "Neo4j AuraDB non connecte")
+        raise HTTPException(503, "Neo4j non connecte")
     data  = community_detector.get_full_analysis()
     match = next((c for c in data.get("communities", []) if c["id"] == community_id), None)
     if not match:
@@ -2295,7 +2394,20 @@ async def get_community_detail(community_id: int):
     return match
 
 
-# ─── Features ─────────────────────────────────────────────────────────────────
+@app.get("/neo4j/info")
+async def neo4j_info():
+    if neo4j_loader is None or neo4j_loader.driver is None:
+        raise HTTPException(503, "Neo4j non connecte")
+    db_type = "LOCALE" if "localhost" in neo4j_loader.uri else "AURADB"
+    return {
+        "uri": neo4j_loader.uri,
+        "database": neo4j_loader.database,
+        "type": db_type,
+        "connected": True
+    }
+
+
+#  Features 
 @app.get("/features")
 async def get_all_features(
     group: Optional[str] = None,
@@ -2357,7 +2469,7 @@ async def get_all_features(
     })
 
 
-# ─── Prediction combinee Excel + Neo4j ───────────────────────────────────────
+#  Prediction combinee Excel + Neo4j 
 @app.get("/predict-combined/{sinistre_id}")
 async def predict_combined(sinistre_id: int):
     _check_model()
@@ -2533,6 +2645,144 @@ async def get_fraud_score_statistics():
     })
 
 
+# 
+# TEST MODE SUPERVISE - Donnees non labellises avec modele supervis actif
+# 
+
+class SupervisedTestRequest(BaseModel):
+    seuil_frauduleux: Optional[float] = None
+    seuil_suspect_min: Optional[float] = None
+    sample_fraction: Optional[float] = 1.0
+
+def _check_supervised_model():
+    detector = getattr(app.state, "fraud_detector", fraud_detector)
+    if detector is None or not getattr(detector, "is_fitted", False):
+        raise HTTPException(503, "Modele non entrane --- dmarrez d'abord avec des donnes labellises")
+    if getattr(detector, "_supervised_labels", None) is None:
+        raise HTTPException(503, "Aucun modele supervise actif  le modele actuel a t entran sans labels. Reentrainez avec le mode 'supervised' ou 'auto' depuis l'onglet Configuration.")
+    if detector.models.get("xgb") is None:
+        raise HTTPException(503, "XGBoost non disponible  le modele n'a pas t entran en mode supervise")
+    return detector
+
+@app.post("/model/test-supervised")
+async def test_supervised_mode(files: List[UploadFile] = File(...)):
+    """
+    Zone de test pour le mode supervis.
+    
+    - Upload de donnes non labellises (sinistres.xlsx, contrats.xlsx, tiers.xlsx optionnel)
+    - APPLIQUE le modle XGBoost dj entran pour prdire les labels
+    - NE REGENERE PAS de colonne is_fraud
+    - NE MODIFIE PAS les donnes principales ni version du modle
+    - NE DECLenche PAS d'entrainement
+    - Retourne les scores et prdictions
+    
+    Precondition: Un modle supervis doit tre actif (avec _supervised_labels)
+    """
+    detector = _check_supervised_model()
+    
+    if len(files) < 1 or len(files) > 3:
+        raise HTTPException(400, "1-3 fichiers attendus: sinistres (obligatoire), contrats, tiers (optionnel)")
+    
+    sinistres_content = None
+    contrats_content = None
+    tiers_content = None
+    
+    for file in files:
+        name_lower = file.filename.lower()
+        content = await file.read()
+        if "sinistres" in name_lower:
+            sinistres_content = content
+        elif "contrats" in name_lower:
+            contrats_content = content
+        elif "tiers" in name_lower:
+            tiers_content = content
+    
+    if sinistres_content is None:
+        raise HTTPException(400, "Fichier sinistres.xlsx requis pour le test")
+    
+    try:
+        test_df = pd.read_excel(BytesIO(sinistres_content), engine='openpyxl')
+        test_df.columns = [c.strip() if isinstance(c, str) else c for c in test_df.columns]
+    except Exception as e:
+        raise HTTPException(400, f"Erreur lecture sinistres.xlsx: {str(e)}")
+    
+    if len(test_df) == 0:
+        raise HTTPException(400, "Fichier sinistres.xlsx vide")
+    
+    # Charger contrats/tiers uploads si fournis
+    uploaded_contrats = None
+    uploaded_tiers = None
+    
+    if contrats_content:
+        try:
+            uploaded_contrats = pd.read_excel(BytesIO(contrats_content), engine='openpyxl')
+        except Exception:
+            pass
+    
+    if tiers_content:
+        try:
+            uploaded_tiers = pd.read_excel(BytesIO(tiers_content), engine='openpyxl')
+        except Exception:
+            pass
+    
+    result_df = detector.score_df(
+        test_df,
+        contrats_df=uploaded_contrats if uploaded_contrats is not None else contrats_df,
+        tiers_df=uploaded_tiers if uploaded_tiers is not None else tiers_df,
+        geocoder=geocoder
+    )
+    
+    results = []
+    for idx in range(len(result_df)):
+        row = result_df.iloc[idx]
+        score = float(row.get("score_suspicion", 0))
+        # Niveau de risque complet (4 niveaux cohrents avec le reste de l'API)
+        if score >= 85:
+            niveau = "critique"
+        elif score >= SEUIL_FRAUDULEUX:
+            niveau = "eleve"
+        elif score >= SEUIL_SUSPECT_MIN:
+            niveau = "modere"
+        else:
+            niveau = "faible"
+        results.append({
+            "index": idx,
+            "NUM_SINISTRE": clean_for_json(str(row.get("NUM_SINISTRE", ""))),
+            "TOTALREGLEMENT": clean_for_json(safe_float(row.get("TOTALREGLEMENT", 0))),
+            "score_suspicion": score,
+            "statut_fraude": str(row.get("statut_fraude", "normal")),
+            "niveau_risque": niveau,
+        })
+    
+    frauduleux = sum(1 for r in results if r["statut_fraude"] == "frauduleux")
+    suspect = sum(1 for r in results if r["statut_fraude"] == "suspect")
+    normal = sum(1 for r in results if r["statut_fraude"] == "normal")
+    
+    return JSONResponse({
+        "success": True,
+        "total_sinistres": len(results),
+        "distribution": {
+            "frauduleux": {"count": frauduleux, "pct": round(frauduleux / len(results) * 100, 2) if results else 0},
+            "suspect": {"count": suspect, "pct": round(suspect / len(results) * 100, 2) if results else 0},
+            "normal": {"count": normal, "pct": round(normal / len(results) * 100, 2) if results else 0},
+        },
+        "results": results,
+        "model_info": {
+            "is_supervised": True,
+            "label_source": detector._label_source,
+            "active_version": detector.version_manager.get_active_version(),
+        }
+    })
+
+
+@app.get("/model/diagnostic")
+async def model_diagnostic():
+    detector = getattr(app.state, "fraud_detector", fraud_detector)
+    if detector is None:
+        return {"error": "Aucun detecteur disponible"}
+    
+    return {"is_fitted": detector.is_fitted, "has_supervised_labels": detector._supervised_labels is not None, "label_source": detector._label_source, "active_version": detector.version_manager.get_active_version(), "has_xgb_model": "xgb" in detector.models, "models_available": list(detector.models.keys())}
+
 if __name__ == "__main__":
     import uvicorn
     import socket
@@ -2542,3 +2792,4 @@ if __name__ == "__main__":
     sock.bind(("0.0.0.0", 8000))
     sock.close()
     uvicorn.run(app, host="0.0.0.0", port=8000)
+# TEST_LINE
